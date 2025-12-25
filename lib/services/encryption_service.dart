@@ -5,6 +5,10 @@ import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart';
 import 'rust_crypto.dart';
 
+bool get _isMobilePlatform {
+  return Platform.isAndroid || Platform.isIOS;
+}
+
 class DecryptResult {
   final Uint8List? data;
   final String? tempFilePath;
@@ -27,8 +31,20 @@ class EncryptionService {
   static const int version = 1;
   static const int headerSize = 14;
   static const int maxHintLength = 32;
-  static const int chunkSize = 64 * 1024 * 1024;
-  static const int memoryThreshold = 100 * 1024 * 1024;
+
+  static int get chunkSize {
+    return _isMobilePlatform
+        ? 128 *
+              1048576 // 128MB for mobile
+        : 256 * 1048576; // 256MB for desktop (避免过高参数导致UI阻塞)
+  }
+
+  static int get memoryThreshold {
+    return _isMobilePlatform
+        ? 200 *
+              1048576 // 200MB for mobile
+        : 400 * 1048576; // 400MB for desktop (对应256MB chunk size)
+  }
 
   static Future<void> encryptFile(
     String inputPath,
@@ -96,13 +112,16 @@ class EncryptionService {
         final inputStream = inputFile.openRead();
         final buffer = <int>[];
         int chunkIndex = 0;
+        final currentChunkSize = chunkSize;
 
         await for (var chunk in inputStream) {
           buffer.addAll(chunk);
 
-          while (buffer.length >= chunkSize) {
-            final chunkData = Uint8List.fromList(buffer.sublist(0, chunkSize));
-            buffer.removeRange(0, chunkSize);
+          while (buffer.length >= currentChunkSize) {
+            final chunkData = Uint8List.fromList(
+              buffer.sublist(0, currentChunkSize),
+            );
+            buffer.removeRange(0, currentChunkSize);
 
             final passwordBytes = utf8.encode(password);
             final encryptedChunk = RustCrypto.encryptData(
