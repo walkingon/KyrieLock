@@ -226,6 +226,7 @@ class EncryptionService {
     }
 
     final fileSize = await file.length();
+    const int chunkSize = 64 * 1024 * 1024;
     const int memoryThreshold = 100 * 1024 * 1024;
     print('[DECRYPT] Starting decryption: fileSize=$fileSize');
 
@@ -258,10 +259,21 @@ class EncryptionService {
     final encryptedDataSize = fileSize - encryptedDataStart;
     print('[DECRYPT] Encrypted data: start=$encryptedDataStart, size=$encryptedDataSize');
 
-    if (encryptedDataSize <= memoryThreshold) {
-      print('[DECRYPT] Small file, decrypting in memory');
+    bool isChunked = false;
+    if (encryptedDataSize > chunkSize) {
+      final firstFourBytes = await file.openRead(encryptedDataStart, encryptedDataStart + 4).first;
+      final possibleChunkLength = ByteData.sublistView(Uint8List.fromList(firstFourBytes)).getUint32(0, Endian.big);
+      if (possibleChunkLength > 0 && possibleChunkLength <= encryptedDataSize - 4) {
+        isChunked = true;
+        print('[DECRYPT] Detected chunked encryption format (first chunk length: $possibleChunkLength)');
+      }
+    }
+
+    if (!isChunked && encryptedDataSize <= memoryThreshold) {
+      print('[DECRYPT] Small file (single chunk), decrypting in memory');
       final allBytes = await file.readAsBytes();
       final encryptedData = allBytes.sublist(encryptedDataStart);
+      print('[DECRYPT] Small file (single chunk), decrypting in memory');
       print('[DECRYPT] Encrypted data length: ${encryptedData.length}');
 
       try {
@@ -291,7 +303,7 @@ class EncryptionService {
         throw Exception('Invalid password or corrupted file');
       }
     } else {
-      print('[DECRYPT] Large file detected (${(encryptedDataSize / 1024 / 1024).toStringAsFixed(2)} MB), decrypting to temp file');
+      print('[DECRYPT] Large file or chunked format detected (${(encryptedDataSize / 1024 / 1024).toStringAsFixed(2)} MB), decrypting to temp file');
       final tempDir = Directory.systemTemp;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final originalExt = _getOriginalExtension(filePath);
@@ -375,8 +387,17 @@ class EncryptionService {
     final outputSink = outputFile.openWrite();
 
     try {
-      if (encryptedDataSize <= chunkSize * 2) {
-        print('[DECRYPT] Small file, decrypting as single chunk');
+      bool isChunked = false;
+      if (encryptedDataSize > chunkSize) {
+        final firstFourBytes = await file.openRead(encryptedDataStart, encryptedDataStart + 4).first;
+        final possibleChunkLength = ByteData.sublistView(Uint8List.fromList(firstFourBytes)).getUint32(0, Endian.big);
+        if (possibleChunkLength > 0 && possibleChunkLength <= encryptedDataSize - 4) {
+          isChunked = true;
+        }
+      }
+
+      if (!isChunked && encryptedDataSize <= chunkSize) {
+        print('[DECRYPT] Small file (single chunk), decrypting directly');
         final allBytes = await file.readAsBytes();
         final encryptedData = allBytes.sublist(encryptedDataStart);
         print('[DECRYPT] Encrypted data length: ${encryptedData.length}');
@@ -397,7 +418,7 @@ class EncryptionService {
           outputSink.add(decrypted);
         }
       } else {
-        print('[DECRYPT] Large file, decrypting in chunks');
+        print('[DECRYPT] Chunked file format detected, decrypting in chunks');
         final inputStream = file.openRead(encryptedDataStart);
         int chunkIndex = 0;
         var currentChunkData = <int>[];
