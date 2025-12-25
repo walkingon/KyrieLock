@@ -45,6 +45,7 @@ class EncryptionService {
     String password, {
     String? hint,
   }) async {
+    final startTime = DateTime.now();
     final inputFile = File(inputPath);
     final outputFile = File(outputPath);
 
@@ -153,6 +154,10 @@ class EncryptionService {
     } finally {
       await outputSink.close();
     }
+    
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime);
+    print('[ENCRYPT] Total encryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
   }
 
   static Future<bool> isEncryptedFile(String filePath) async {
@@ -214,6 +219,7 @@ class EncryptionService {
   }
 
   static Future<DecryptResult> decryptFile(String filePath, String password) async {
+    final startTime = DateTime.now();
     final file = File(filePath);
     if (!await file.exists()) {
       throw Exception('File does not exist');
@@ -263,6 +269,9 @@ class EncryptionService {
           final passwordBytes = utf8.encode(password);
           final decrypted = RustCrypto.decryptData(encryptedData, passwordBytes, iv.bytes);
           print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
+          final endTime = DateTime.now();
+          final duration = endTime.difference(startTime);
+          print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
           return DecryptResult.inMemory(decrypted);
         } else {
           final key = encrypt.Key(_deriveKey(password));
@@ -272,6 +281,9 @@ class EncryptionService {
             iv: iv,
           );
           print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
+          final endTime = DateTime.now();
+          final duration = endTime.difference(startTime);
+          print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
           return DecryptResult.inMemory(Uint8List.fromList(decrypted));
         }
       } catch (e) {
@@ -290,6 +302,9 @@ class EncryptionService {
       try {
         await decryptFileToPath(filePath, tempFile.path, password);
         print('[DECRYPT] Large file decrypted successfully to temp file: ${tempFile.path}');
+        final endTime = DateTime.now();
+        final duration = endTime.difference(startTime);
+        print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
         return DecryptResult.tempFile(tempFile.path);
       } catch (e) {
         if (await tempFile.exists()) {
@@ -317,6 +332,7 @@ class EncryptionService {
     String outputPath,
     String password,
   ) async {
+    final startTime = DateTime.now();
     final file = File(inputPath);
     if (!await file.exists()) {
       throw Exception('File does not exist');
@@ -451,6 +467,10 @@ class EncryptionService {
     } finally {
       await outputSink.close();
     }
+    
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime);
+    print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
   }
 
   static String addEncryptedExtension(String filename) {
