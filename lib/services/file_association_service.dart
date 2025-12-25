@@ -17,7 +17,7 @@ class FileAssociationService {
       await _channel.invokeMethod('registerFileAssociation');
     } catch (e) {
       if (kDebugMode) {
-        print('Failed to register file association: $e');
+        debugPrint('Failed to register file association: $e');
       }
     }
   }
@@ -31,7 +31,7 @@ class FileAssociationService {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Failed to get initial file: $e');
+        debugPrint('Failed to get initial file: $e');
       }
     }
     return null;
