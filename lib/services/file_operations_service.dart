@@ -77,17 +77,17 @@ class FileOperationsService {
 
     final outputName = EncryptionService.removeEncryptedExtension(fileName);
     
-    final decryptedBytes = await EncryptionService.decryptFile(inputPath, password);
-    
-    final outputPath = await file_picker.FilePicker.platform.saveFile(
-      dialogTitle: 'Save File',
-      fileName: outputName,
-      bytes: decryptedBytes,
+    final outputDir = await file_picker.FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Select Save Location',
     );
-
-    if (outputPath == null) {
+    
+    if (outputDir == null) {
       throw Exception('Save location not selected');
     }
+    
+    final outputPath = '$outputDir${Platform.pathSeparator}$outputName';
+
+    await EncryptionService.decryptFileToPath(inputPath, outputPath, password);
   }
 
   static String getFileExtension(String filePath) {
