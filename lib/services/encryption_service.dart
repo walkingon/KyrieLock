@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,10 @@ import 'rust_crypto.dart';
 
 bool get _isMobilePlatform {
   return Platform.isAndroid || Platform.isIOS;
+}
+
+int _getCpuCoreCount() {
+  return Platform.numberOfProcessors;
 }
 
 class DecryptResult {
@@ -46,9 +51,17 @@ class EncryptionService {
   }
 
   static int get parallelBatchSize {
-    return _isMobilePlatform
-        ? 4  // Process 4 chunks at a time (4×128MB=512MB)
-        : 8; // Process 8 chunks at a time (8×256MB=2GB)
+    final cpuCores = _getCpuCoreCount();
+    
+    if (_isMobilePlatform) {
+      // Mobile: Conservative to avoid OOM
+      // Min: 2, Max: cpuCores, optimal range: 4-8
+      return (cpuCores * 0.5).clamp(2, 8).toInt();
+    } else {
+      // Desktop: More aggressive based on CPU cores
+      // Min: 4, Max: cpuCores, optimal range: 8-16
+      return (cpuCores * 0.75).clamp(4, 16).toInt();
+    }
   }
 
   static Future<void> encryptFile(
@@ -87,6 +100,13 @@ class EncryptionService {
     header.add([version, 0, 0, 0]);
 
     final outputSink = outputFile.openWrite();
+    
+    if (kDebugMode) {
+      final cpuCores = _getCpuCoreCount();
+      final batchSize = parallelBatchSize;
+      debugPrint('[ENCRYPT] CPU cores: $cpuCores, Batch size: $batchSize');
+    }
+    
     try {
       outputSink.add(header.toBytes());
       outputSink.add([hintLength]);
@@ -163,36 +183,74 @@ class EncryptionService {
       } else {
         if (kDebugMode) {
           debugPrint(
-            '[ENCRYPT] Large file (${(fileSize / 1048576).toStringAsFixed(2)} MB), using batched parallel encryption',
+            '[ENCRYPT] Large file (${(fileSize / 1048576).toStringAsFixed(2)} MB), using pipeline parallel encryption',
           );
         }
         
         final inputStream = inputFile.openRead();
-        final buffer = <int>[];
         final passwordBytes = utf8.encode(password);
         var totalChunksProcessed = 0;
         
-        final batchChunks = <Uint8List>[];
-        final batchNonces = <Uint8List>[];
+        final readController = StreamController<({Uint8List data, Uint8List nonce})>();
+        final encryptController = StreamController<({Uint8List nonce, Uint8List encrypted})>();
         
-        await for (var chunk in inputStream) {
-          buffer.addAll(chunk);
-          
-          while (buffer.length >= chunkSize) {
-            final chunkData = Uint8List.fromList(buffer.sublist(0, chunkSize));
-            buffer.removeRange(0, chunkSize);
-            
-            batchChunks.add(chunkData);
-            final chunkNonce = encrypt.IV.fromLength(12);
-            batchNonces.add(chunkNonce.bytes);
-            
-            if (batchChunks.length >= parallelBatchSize) {
-              if (kDebugMode) {
-                debugPrint(
-                  '[ENCRYPT] Processing batch of ${batchChunks.length} chunks in parallel (chunks $totalChunksProcessed-${totalChunksProcessed + batchChunks.length - 1})',
-                );
-              }
+        // Producer: Read chunks from file
+        Future<void> readProducer() async {
+          try {
+            final buffer = <int>[];
+            await for (var chunk in inputStream) {
+              buffer.addAll(chunk);
               
+              while (buffer.length >= chunkSize) {
+                final chunkData = Uint8List.fromList(buffer.sublist(0, chunkSize));
+                buffer.removeRange(0, chunkSize);
+                
+                final chunkNonce = encrypt.IV.fromLength(12);
+                readController.add((data: chunkData, nonce: chunkNonce.bytes));
+              }
+            }
+            
+            if (buffer.isNotEmpty) {
+              final chunkData = Uint8List.fromList(buffer);
+              final chunkNonce = encrypt.IV.fromLength(12);
+              readController.add((data: chunkData, nonce: chunkNonce.bytes));
+            }
+          } finally {
+            await readController.close();
+          }
+        }
+        
+        // Worker: Encrypt chunks in parallel batches
+        Future<void> encryptWorker() async {
+          try {
+            final batchChunks = <Uint8List>[];
+            final batchNonces = <Uint8List>[];
+            
+            await for (var item in readController.stream) {
+              batchChunks.add(item.data);
+              batchNonces.add(item.nonce);
+              
+              if (batchChunks.length >= parallelBatchSize) {
+                final encryptedBatch = RustCrypto.encryptDataParallel(
+                  batchChunks,
+                  passwordBytes,
+                  batchNonces,
+                );
+                
+                for (var i = 0; i < encryptedBatch.length; i++) {
+                  encryptController.add((
+                    nonce: batchNonces[i],
+                    encrypted: encryptedBatch[i],
+                  ));
+                }
+                
+                totalChunksProcessed += batchChunks.length;
+                batchChunks.clear();
+                batchNonces.clear();
+              }
+            }
+            
+            if (batchChunks.isNotEmpty) {
               final encryptedBatch = RustCrypto.encryptDataParallel(
                 batchChunks,
                 passwordBytes,
@@ -200,49 +258,36 @@ class EncryptionService {
               );
               
               for (var i = 0; i < encryptedBatch.length; i++) {
-                outputSink.add(batchNonces[i]);
-                final chunkLengthBytes = ByteData(4);
-                chunkLengthBytes.setUint32(0, encryptedBatch[i].length, Endian.big);
-                outputSink.add(chunkLengthBytes.buffer.asUint8List());
-                outputSink.add(encryptedBatch[i]);
+                encryptController.add((
+                  nonce: batchNonces[i],
+                  encrypted: encryptedBatch[i],
+                ));
               }
               
               totalChunksProcessed += batchChunks.length;
-              batchChunks.clear();
-              batchNonces.clear();
             }
+          } finally {
+            await encryptController.close();
           }
         }
         
-        if (buffer.isNotEmpty) {
-          batchChunks.add(Uint8List.fromList(buffer));
-          final chunkNonce = encrypt.IV.fromLength(12);
-          batchNonces.add(chunkNonce.bytes);
-        }
-        
-        if (batchChunks.isNotEmpty) {
-          if (kDebugMode) {
-            debugPrint(
-              '[ENCRYPT] Processing final batch of ${batchChunks.length} chunks in parallel',
-            );
-          }
-          
-          final encryptedBatch = RustCrypto.encryptDataParallel(
-            batchChunks,
-            passwordBytes,
-            batchNonces,
-          );
-          
-          for (var i = 0; i < encryptedBatch.length; i++) {
-            outputSink.add(batchNonces[i]);
+        // Consumer: Write encrypted chunks to file
+        Future<void> writeConsumer() async {
+          await for (var item in encryptController.stream) {
+            outputSink.add(item.nonce);
             final chunkLengthBytes = ByteData(4);
-            chunkLengthBytes.setUint32(0, encryptedBatch[i].length, Endian.big);
+            chunkLengthBytes.setUint32(0, item.encrypted.length, Endian.big);
             outputSink.add(chunkLengthBytes.buffer.asUint8List());
-            outputSink.add(encryptedBatch[i]);
+            outputSink.add(item.encrypted);
           }
-          
-          totalChunksProcessed += batchChunks.length;
         }
+        
+        // Execute pipeline in parallel
+        await Future.wait([
+          readProducer(),
+          encryptWorker(),
+          writeConsumer(),
+        ]);
         
         if (kDebugMode) {
           debugPrint('[ENCRYPT] Total chunks encrypted: $totalChunksProcessed');
