@@ -27,16 +27,9 @@ class EncryptionService {
   static const int version = 1;
   static const int headerSize = 14;
   static const int maxHintLength = 32;
-  static const bool useRustCrypto = true;
 
   static Uint8List _deriveKey(String password) {
-    if (useRustCrypto) {
-      return RustCrypto.deriveKey(utf8.encode(password));
-    } else {
-      final bytes = utf8.encode(password);
-      final hash = sha256.convert(bytes);
-      return Uint8List.fromList(hash.bytes);
-    }
+    return RustCrypto.deriveKey(utf8.encode(password));
   }
 
   static Future<void> encryptFile(
@@ -83,16 +76,8 @@ class EncryptionService {
       if (fileSize <= chunkSize) {
         print('[ENCRYPT] Small file, encrypting as single chunk');
         final bytes = await inputFile.readAsBytes();
-        Uint8List encryptedBytes;
-        if (useRustCrypto) {
-          final passwordBytes = utf8.encode(password);
-          encryptedBytes = RustCrypto.encryptData(bytes, passwordBytes, iv.bytes);
-        } else {
-          final key = encrypt.Key(_deriveKey(password));
-          final encrypter = encrypt.Encrypter(encrypt.AES(key));
-          final encrypted = encrypter.encryptBytes(bytes, iv: iv);
-          encryptedBytes = encrypted.bytes;
-        }
+        final passwordBytes = utf8.encode(password);
+        final encryptedBytes = RustCrypto.encryptData(bytes, passwordBytes, iv.bytes);
         print('[ENCRYPT] Encrypted size: ${encryptedBytes.length}');
         outputSink.add(encryptedBytes);
       } else {
@@ -108,16 +93,8 @@ class EncryptionService {
             final chunkData = Uint8List.fromList(buffer.sublist(0, chunkSize));
             buffer.removeRange(0, chunkSize);
             
-            Uint8List encryptedChunk;
-            if (useRustCrypto) {
-              final passwordBytes = utf8.encode(password);
-              encryptedChunk = RustCrypto.encryptData(chunkData, passwordBytes, iv.bytes);
-            } else {
-              final key = encrypt.Key(_deriveKey(password));
-              final encrypter = encrypt.Encrypter(encrypt.AES(key));
-              final encrypted = encrypter.encryptBytes(chunkData, iv: iv);
-              encryptedChunk = encrypted.bytes;
-            }
+            final passwordBytes = utf8.encode(password);
+            final encryptedChunk = RustCrypto.encryptData(chunkData, passwordBytes, iv.bytes);
             
             print('[ENCRYPT] Chunk $chunkIndex: original=${chunkData.length}, encrypted=${encryptedChunk.length}');
             final chunkLengthBytes = ByteData(4);
@@ -130,16 +107,8 @@ class EncryptionService {
         
         if (buffer.isNotEmpty) {
           final lastChunk = Uint8List.fromList(buffer);
-          Uint8List encryptedChunk;
-          if (useRustCrypto) {
-            final passwordBytes = utf8.encode(password);
-            encryptedChunk = RustCrypto.encryptData(lastChunk, passwordBytes, iv.bytes);
-          } else {
-            final key = encrypt.Key(_deriveKey(password));
-            final encrypter = encrypt.Encrypter(encrypt.AES(key));
-            final encrypted = encrypter.encryptBytes(lastChunk, iv: iv);
-            encryptedChunk = encrypted.bytes;
-          }
+          final passwordBytes = utf8.encode(password);
+          final encryptedChunk = RustCrypto.encryptData(lastChunk, passwordBytes, iv.bytes);
           
           print('[ENCRYPT] Last chunk $chunkIndex: original=${lastChunk.length}, encrypted=${encryptedChunk.length}');
           final chunkLengthBytes = ByteData(4);
@@ -277,27 +246,13 @@ class EncryptionService {
       print('[DECRYPT] Encrypted data length: ${encryptedData.length}');
 
       try {
-        if (useRustCrypto) {
-          final passwordBytes = utf8.encode(password);
-          final decrypted = RustCrypto.decryptData(encryptedData, passwordBytes, iv.bytes);
-          print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
-          final endTime = DateTime.now();
-          final duration = endTime.difference(startTime);
-          print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
-          return DecryptResult.inMemory(decrypted);
-        } else {
-          final key = encrypt.Key(_deriveKey(password));
-          final encrypter = encrypt.Encrypter(encrypt.AES(key));
-          final decrypted = encrypter.decryptBytes(
-            encrypt.Encrypted(encryptedData),
-            iv: iv,
-          );
-          print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
-          final endTime = DateTime.now();
-          final duration = endTime.difference(startTime);
-          print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
-          return DecryptResult.inMemory(Uint8List.fromList(decrypted));
-        }
+        final passwordBytes = utf8.encode(password);
+        final decrypted = RustCrypto.decryptData(encryptedData, passwordBytes, iv.bytes);
+        print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
+        final endTime = DateTime.now();
+        final duration = endTime.difference(startTime);
+        print('[DECRYPT] Total decryption time: ${duration.inMilliseconds}ms (${duration.inSeconds}s)');
+        return DecryptResult.inMemory(decrypted);
       } catch (e) {
         print('[DECRYPT] Error during decryption: $e');
         throw Exception('Invalid password or corrupted file');
@@ -402,21 +357,10 @@ class EncryptionService {
         final encryptedData = allBytes.sublist(encryptedDataStart);
         print('[DECRYPT] Encrypted data length: ${encryptedData.length}');
 
-        if (useRustCrypto) {
-          final passwordBytes = utf8.encode(password);
-          final decrypted = RustCrypto.decryptData(encryptedData, passwordBytes, iv.bytes);
-          print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
-          outputSink.add(decrypted);
-        } else {
-          final key = encrypt.Key(_deriveKey(password));
-          final encrypter = encrypt.Encrypter(encrypt.AES(key));
-          final decrypted = encrypter.decryptBytes(
-            encrypt.Encrypted(encryptedData),
-            iv: iv,
-          );
-          print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
-          outputSink.add(decrypted);
-        }
+        final passwordBytes = utf8.encode(password);
+        final decrypted = RustCrypto.decryptData(encryptedData, passwordBytes, iv.bytes);
+        print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
+        outputSink.add(decrypted);
       } else {
         print('[DECRYPT] Chunked file format detected, decrypting in chunks');
         final inputStream = file.openRead(encryptedDataStart);
@@ -453,19 +397,8 @@ class EncryptionService {
               if (currentChunkData.length == expectedChunkLength) {
                 final chunkData = Uint8List.fromList(currentChunkData);
                 
-                Uint8List decryptedChunk;
-                if (useRustCrypto) {
-                  final passwordBytes = utf8.encode(password);
-                  decryptedChunk = RustCrypto.decryptData(chunkData, passwordBytes, iv.bytes);
-                } else {
-                  final key = encrypt.Key(_deriveKey(password));
-                  final encrypter = encrypt.Encrypter(encrypt.AES(key));
-                  final decrypted = encrypter.decryptBytes(
-                    encrypt.Encrypted(chunkData),
-                    iv: iv,
-                  );
-                  decryptedChunk = Uint8List.fromList(decrypted);
-                }
+                final passwordBytes = utf8.encode(password);
+                final decryptedChunk = RustCrypto.decryptData(chunkData, passwordBytes, iv.bytes);
                 print('[DECRYPT] Chunk $chunkIndex decrypted: ${decryptedChunk.length} bytes');
                 outputSink.add(decryptedChunk);
                 chunkIndex++;
