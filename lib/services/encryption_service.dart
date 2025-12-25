@@ -27,6 +27,8 @@ class EncryptionService {
   static const int version = 1;
   static const int headerSize = 14;
   static const int maxHintLength = 32;
+  static const int chunkSize = 64 * 1024 * 1024;
+  static const int memoryThreshold = 100 * 1024 * 1024;
 
   static Future<void> encryptFile(
     String inputPath,
@@ -43,7 +45,6 @@ class EncryptionService {
     }
 
     final fileSize = await inputFile.length();
-    const int chunkSize = 64 * 1024 * 1024;
     if (kDebugMode) {
       debugPrint(
         '[ENCRYPT] Starting encryption: fileSize=$fileSize, chunkSize=$chunkSize',
@@ -230,8 +231,6 @@ class EncryptionService {
     }
 
     final fileSize = await file.length();
-    const int chunkSize = 64 * 1024 * 1024;
-    const int memoryThreshold = 100 * 1024 * 1024;
     if (kDebugMode) {
       debugPrint('[DECRYPT] Starting decryption: fileSize=$fileSize');
     }
@@ -390,7 +389,6 @@ class EncryptionService {
     }
 
     final fileSize = await file.length();
-    const int chunkSize = 64 * 1024 * 1024;
     if (kDebugMode) {
       debugPrint('[DECRYPT] Starting decryption: fileSize=$fileSize');
     }
