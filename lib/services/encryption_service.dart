@@ -39,11 +39,16 @@ class EncryptionService {
         : 256 * 1048576; // 256MB for desktop (避免过高参数导致UI阻塞)
   }
 
-  static int get memoryThreshold {
+  static int get parallelBatchThreshold {
     return _isMobilePlatform
-        ? 200 *
-              1048576 // 200MB for mobile
-        : 400 * 1048576; // 400MB for desktop (对应256MB chunk size)
+        ? 512 * 1048576  // 512MB for mobile (avoid OOM)
+        : 1024 * 1048576; // 1GB for desktop
+  }
+
+  static int get parallelBatchSize {
+    return _isMobilePlatform
+        ? 4  // Process 4 chunks at a time (4×128MB=512MB)
+        : 8; // Process 8 chunks at a time (8×256MB=2GB)
   }
 
   static Future<void> encryptFile(
@@ -67,8 +72,6 @@ class EncryptionService {
       );
     }
 
-    final iv = encrypt.IV.fromLength(16);
-
     final hintBytes = hint != null && hint.isNotEmpty
         ? utf8.encode(
             hint.substring(
@@ -88,82 +91,161 @@ class EncryptionService {
       outputSink.add(header.toBytes());
       outputSink.add([hintLength]);
       outputSink.add(hintBytes);
-      outputSink.add(iv.bytes);
 
       if (fileSize <= chunkSize) {
         if (kDebugMode) {
           debugPrint('[ENCRYPT] Small file, encrypting as single chunk');
         }
+        final nonce = encrypt.IV.fromLength(12);
+        outputSink.add(nonce.bytes);
+        
         final bytes = await inputFile.readAsBytes();
         final passwordBytes = utf8.encode(password);
         final encryptedBytes = RustCrypto.encryptData(
           bytes,
           passwordBytes,
-          iv.bytes,
+          nonce.bytes,
         );
         if (kDebugMode) {
           debugPrint('[ENCRYPT] Encrypted size: ${encryptedBytes.length}');
         }
         outputSink.add(encryptedBytes);
-      } else {
+      } else if (fileSize <= parallelBatchThreshold) {
         if (kDebugMode) {
-          debugPrint('[ENCRYPT] Large file, encrypting in chunks');
+          debugPrint('[ENCRYPT] Medium file, encrypting with full parallel processing');
         }
-        final inputStream = inputFile.openRead();
-        final buffer = <int>[];
-        int chunkIndex = 0;
-        final currentChunkSize = chunkSize;
-
-        await for (var chunk in inputStream) {
-          buffer.addAll(chunk);
-
-          while (buffer.length >= currentChunkSize) {
-            final chunkData = Uint8List.fromList(
-              buffer.sublist(0, currentChunkSize),
-            );
-            buffer.removeRange(0, currentChunkSize);
-
-            final passwordBytes = utf8.encode(password);
-            final encryptedChunk = RustCrypto.encryptData(
-              chunkData,
-              passwordBytes,
-              iv.bytes,
-            );
-
-            if (kDebugMode) {
-              debugPrint(
-                '[ENCRYPT] Chunk $chunkIndex: original=${chunkData.length}, encrypted=${encryptedChunk.length}',
-              );
-            }
-            final chunkLengthBytes = ByteData(4);
-            chunkLengthBytes.setUint32(0, encryptedChunk.length, Endian.big);
-            outputSink.add(chunkLengthBytes.buffer.asUint8List());
-            outputSink.add(encryptedChunk);
-            chunkIndex++;
-          }
+        
+        final allBytes = await inputFile.readAsBytes();
+        final chunks = <Uint8List>[];
+        final nonces = <Uint8List>[];
+        
+        for (var offset = 0; offset < allBytes.length; offset += chunkSize) {
+          final end = (offset + chunkSize < allBytes.length) 
+              ? offset + chunkSize 
+              : allBytes.length;
+          chunks.add(Uint8List.sublistView(allBytes, offset, end));
+          final chunkNonce = encrypt.IV.fromLength(12);
+          nonces.add(chunkNonce.bytes);
         }
-
-        if (buffer.isNotEmpty) {
-          final lastChunk = Uint8List.fromList(buffer);
-          final passwordBytes = utf8.encode(password);
-          final encryptedChunk = RustCrypto.encryptData(
-            lastChunk,
-            passwordBytes,
-            iv.bytes,
-          );
-
+        
+        if (kDebugMode) {
+          debugPrint('[ENCRYPT] Total chunks to encrypt in parallel: ${chunks.length}');
+        }
+        
+        final passwordBytes = utf8.encode(password);
+        final encryptedChunks = RustCrypto.encryptDataParallel(
+          chunks,
+          passwordBytes,
+          nonces,
+        );
+        
+        if (kDebugMode) {
+          debugPrint('[ENCRYPT] Parallel encryption completed, writing to file');
+        }
+        
+        for (var i = 0; i < encryptedChunks.length; i++) {
+          final encryptedChunk = encryptedChunks[i];
           if (kDebugMode) {
             debugPrint(
-              '[ENCRYPT] Last chunk $chunkIndex: original=${lastChunk.length}, encrypted=${encryptedChunk.length}',
+              '[ENCRYPT] Chunk $i: original=${chunks[i].length}, encrypted=${encryptedChunk.length}',
             );
           }
+          outputSink.add(nonces[i]);
           final chunkLengthBytes = ByteData(4);
           chunkLengthBytes.setUint32(0, encryptedChunk.length, Endian.big);
           outputSink.add(chunkLengthBytes.buffer.asUint8List());
           outputSink.add(encryptedChunk);
         }
+        
         if (kDebugMode) {
-          debugPrint('[ENCRYPT] Total chunks encrypted: ${chunkIndex + 1}');
+          debugPrint('[ENCRYPT] Total chunks encrypted: ${encryptedChunks.length}');
+        }
+      } else {
+        if (kDebugMode) {
+          debugPrint(
+            '[ENCRYPT] Large file (${(fileSize / 1048576).toStringAsFixed(2)} MB), using batched parallel encryption',
+          );
+        }
+        
+        final inputStream = inputFile.openRead();
+        final buffer = <int>[];
+        final passwordBytes = utf8.encode(password);
+        var totalChunksProcessed = 0;
+        
+        final batchChunks = <Uint8List>[];
+        final batchNonces = <Uint8List>[];
+        
+        await for (var chunk in inputStream) {
+          buffer.addAll(chunk);
+          
+          while (buffer.length >= chunkSize) {
+            final chunkData = Uint8List.fromList(buffer.sublist(0, chunkSize));
+            buffer.removeRange(0, chunkSize);
+            
+            batchChunks.add(chunkData);
+            final chunkNonce = encrypt.IV.fromLength(12);
+            batchNonces.add(chunkNonce.bytes);
+            
+            if (batchChunks.length >= parallelBatchSize) {
+              if (kDebugMode) {
+                debugPrint(
+                  '[ENCRYPT] Processing batch of ${batchChunks.length} chunks in parallel (chunks $totalChunksProcessed-${totalChunksProcessed + batchChunks.length - 1})',
+                );
+              }
+              
+              final encryptedBatch = RustCrypto.encryptDataParallel(
+                batchChunks,
+                passwordBytes,
+                batchNonces,
+              );
+              
+              for (var i = 0; i < encryptedBatch.length; i++) {
+                outputSink.add(batchNonces[i]);
+                final chunkLengthBytes = ByteData(4);
+                chunkLengthBytes.setUint32(0, encryptedBatch[i].length, Endian.big);
+                outputSink.add(chunkLengthBytes.buffer.asUint8List());
+                outputSink.add(encryptedBatch[i]);
+              }
+              
+              totalChunksProcessed += batchChunks.length;
+              batchChunks.clear();
+              batchNonces.clear();
+            }
+          }
+        }
+        
+        if (buffer.isNotEmpty) {
+          batchChunks.add(Uint8List.fromList(buffer));
+          final chunkNonce = encrypt.IV.fromLength(12);
+          batchNonces.add(chunkNonce.bytes);
+        }
+        
+        if (batchChunks.isNotEmpty) {
+          if (kDebugMode) {
+            debugPrint(
+              '[ENCRYPT] Processing final batch of ${batchChunks.length} chunks in parallel',
+            );
+          }
+          
+          final encryptedBatch = RustCrypto.encryptDataParallel(
+            batchChunks,
+            passwordBytes,
+            batchNonces,
+          );
+          
+          for (var i = 0; i < encryptedBatch.length; i++) {
+            outputSink.add(batchNonces[i]);
+            final chunkLengthBytes = ByteData(4);
+            chunkLengthBytes.setUint32(0, encryptedBatch[i].length, Endian.big);
+            outputSink.add(chunkLengthBytes.buffer.asUint8List());
+            outputSink.add(encryptedBatch[i]);
+          }
+          
+          totalChunksProcessed += batchChunks.length;
+        }
+        
+        if (kDebugMode) {
+          debugPrint('[ENCRYPT] Total chunks encrypted: $totalChunksProcessed');
         }
       }
 
@@ -203,7 +285,13 @@ class EncryptionService {
     }
 
     try {
-      final bytes = await file.readAsBytes();
+      final maxReadSize = headerSize + 1 + maxHintLength;
+      final bytesStream = await file.openRead(0, maxReadSize).first;
+      final bytes = Uint8List.fromList(bytesStream);
+
+      if (bytes.length < headerSize + 1) {
+        return null;
+      }
 
       final magicBytes = bytes.sublist(0, magicString.length);
       final magic = utf8.decode(magicBytes);
@@ -218,10 +306,6 @@ class EncryptionService {
       }
 
       final hintLengthOffset = headerSize;
-      if (bytes.length <= hintLengthOffset) {
-        return null;
-      }
-
       final hintLength = bytes[hintLengthOffset];
       if (hintLength == 0) {
         return null;
@@ -278,10 +362,7 @@ class EncryptionService {
       '[DECRYPT] Header parsed: hintLength=$hintLength, dataOffset=$dataOffset',
     );
 
-    final ivBytes = await file.openRead(dataOffset, dataOffset + 16).first;
-    final iv = encrypt.IV(Uint8List.fromList(ivBytes));
-
-    final encryptedDataStart = dataOffset + 16;
+    final encryptedDataStart = dataOffset;
     final encryptedDataSize = fileSize - encryptedDataStart;
     if (kDebugMode) {
       debugPrint(
@@ -290,30 +371,36 @@ class EncryptionService {
     }
 
     bool isChunked = false;
-    if (encryptedDataSize > chunkSize) {
-      final firstFourBytes = await file
-          .openRead(encryptedDataStart, encryptedDataStart + 4)
+    if (encryptedDataSize > chunkSize + 16) {
+      final firstBytes = await file
+          .openRead(encryptedDataStart, encryptedDataStart + 16)
           .first;
-      final possibleChunkLength = ByteData.sublistView(
-        Uint8List.fromList(firstFourBytes),
-      ).getUint32(0, Endian.big);
-      if (possibleChunkLength > 0 &&
-          possibleChunkLength <= encryptedDataSize - 4) {
-        isChunked = true;
-        if (kDebugMode) {
-          debugPrint(
-            '[DECRYPT] Detected chunked encryption format (first chunk length: $possibleChunkLength)',
-          );
+      if (firstBytes.length >= 16) {
+        final possibleChunkLength = ByteData.sublistView(
+          Uint8List.fromList(firstBytes),
+          12,
+          16,
+        ).getUint32(0, Endian.big);
+        if (possibleChunkLength > 0 &&
+            possibleChunkLength <= encryptedDataSize - 16) {
+          isChunked = true;
+          if (kDebugMode) {
+            debugPrint(
+              '[DECRYPT] Detected chunked encryption format (first chunk length: $possibleChunkLength)',
+            );
+          }
         }
       }
     }
 
-    if (!isChunked && encryptedDataSize <= memoryThreshold) {
+    if (!isChunked && encryptedDataSize <= chunkSize + 16) {
       if (kDebugMode) {
         debugPrint('[DECRYPT] Small file (single chunk), decrypting in memory');
       }
       final allBytes = await file.readAsBytes();
-      final encryptedData = allBytes.sublist(encryptedDataStart);
+      final nonceBytes = allBytes.sublist(encryptedDataStart, encryptedDataStart + 12);
+      final nonce = encrypt.IV(Uint8List.fromList(nonceBytes));
+      final encryptedData = allBytes.sublist(encryptedDataStart + 12);
       if (kDebugMode) {
         debugPrint('[DECRYPT] Encrypted data length: ${encryptedData.length}');
       }
@@ -323,7 +410,7 @@ class EncryptionService {
         final decrypted = RustCrypto.decryptData(
           encryptedData,
           passwordBytes,
-          iv.bytes,
+          nonce.bytes,
         );
         if (kDebugMode) {
           debugPrint(
@@ -442,10 +529,7 @@ class EncryptionService {
       );
     }
 
-    final ivBytes = await file.openRead(dataOffset, dataOffset + 16).first;
-    final iv = encrypt.IV(Uint8List.fromList(ivBytes));
-
-    final encryptedDataStart = dataOffset + 16;
+    final encryptedDataStart = dataOffset;
     final encryptedDataSize = fileSize - encryptedDataStart;
     if (kDebugMode) {
       debugPrint(
@@ -458,27 +542,33 @@ class EncryptionService {
 
     try {
       bool isChunked = false;
-      if (encryptedDataSize > chunkSize) {
-        final firstFourBytes = await file
-            .openRead(encryptedDataStart, encryptedDataStart + 4)
+      if (encryptedDataSize > chunkSize + 16) {
+        final firstBytes = await file
+            .openRead(encryptedDataStart, encryptedDataStart + 16)
             .first;
-        final possibleChunkLength = ByteData.sublistView(
-          Uint8List.fromList(firstFourBytes),
-        ).getUint32(0, Endian.big);
-        if (possibleChunkLength > 0 &&
-            possibleChunkLength <= encryptedDataSize - 4) {
-          isChunked = true;
+        if (firstBytes.length >= 16) {
+          final possibleChunkLength = ByteData.sublistView(
+            Uint8List.fromList(firstBytes),
+            12,
+            16,
+          ).getUint32(0, Endian.big);
+          if (possibleChunkLength > 0 &&
+              possibleChunkLength <= encryptedDataSize - 16) {
+            isChunked = true;
+          }
         }
       }
 
-      if (!isChunked && encryptedDataSize <= chunkSize) {
+      if (!isChunked && encryptedDataSize <= chunkSize + 16) {
         if (kDebugMode) {
           debugPrint(
             '[DECRYPT] Small file (single chunk), decrypting directly',
           );
         }
         final allBytes = await file.readAsBytes();
-        final encryptedData = allBytes.sublist(encryptedDataStart);
+        final nonceBytes = allBytes.sublist(encryptedDataStart, encryptedDataStart + 12);
+        final nonce = encrypt.IV(Uint8List.fromList(nonceBytes));
+        final encryptedData = allBytes.sublist(encryptedDataStart + 12);
         if (kDebugMode) {
           debugPrint(
             '[DECRYPT] Encrypted data length: ${encryptedData.length}',
@@ -489,7 +579,7 @@ class EncryptionService {
         final decrypted = RustCrypto.decryptData(
           encryptedData,
           passwordBytes,
-          iv.bytes,
+          nonce.bytes,
         );
         if (kDebugMode) {
           debugPrint(
@@ -497,39 +587,119 @@ class EncryptionService {
           );
         }
         outputSink.add(decrypted);
+      } else if (encryptedDataSize <= parallelBatchThreshold) {
+        if (kDebugMode) {
+          debugPrint(
+            '[DECRYPT] Medium file, decrypting with full parallel processing',
+          );
+        }
+        
+        final allData = await file.openRead(encryptedDataStart).toList();
+        final allBytes = Uint8List.fromList(allData.expand((x) => x).toList());
+        
+        final encryptedChunks = <Uint8List>[];
+        final nonces = <Uint8List>[];
+        var offset = 0;
+        
+        while (offset < allBytes.length) {
+          if (offset + 12 > allBytes.length) break;
+          
+          final nonceBytes = Uint8List.sublistView(allBytes, offset, offset + 12);
+          nonces.add(nonceBytes);
+          offset += 12;
+          
+          if (offset + 4 > allBytes.length) break;
+          
+          final lengthBytes = ByteData.sublistView(
+            allBytes,
+            offset,
+            offset + 4,
+          );
+          final chunkLength = lengthBytes.getUint32(0, Endian.big);
+          offset += 4;
+          
+          if (offset + chunkLength > allBytes.length) break;
+          
+          encryptedChunks.add(
+            Uint8List.sublistView(allBytes, offset, offset + chunkLength),
+          );
+          offset += chunkLength;
+        }
+        
+        if (kDebugMode) {
+          debugPrint('[DECRYPT] Total chunks to decrypt in parallel: ${encryptedChunks.length}');
+        }
+        
+        final passwordBytes = utf8.encode(password);
+        final decryptedChunks = RustCrypto.decryptDataParallel(
+          encryptedChunks,
+          passwordBytes,
+          nonces,
+        );
+        
+        if (kDebugMode) {
+          debugPrint('[DECRYPT] Parallel decryption completed, writing to file');
+        }
+        
+        for (var i = 0; i < decryptedChunks.length; i++) {
+          if (kDebugMode) {
+            debugPrint(
+              '[DECRYPT] Chunk $i decrypted: ${decryptedChunks[i].length} bytes',
+            );
+          }
+          outputSink.add(decryptedChunks[i]);
+        }
+        
+        if (kDebugMode) {
+          debugPrint('[DECRYPT] Total chunks decrypted: ${decryptedChunks.length}');
+        }
       } else {
         if (kDebugMode) {
           debugPrint(
-            '[DECRYPT] Chunked file format detected, decrypting in chunks',
+            '[DECRYPT] Large file (${(encryptedDataSize / 1048576).toStringAsFixed(2)} MB), using batched parallel decryption',
           );
         }
+        
         final inputStream = file.openRead(encryptedDataStart);
-        int chunkIndex = 0;
+        final passwordBytes = utf8.encode(password);
+        var totalChunksProcessed = 0;
+        
+        final batchChunks = <Uint8List>[];
+        final batchNonces = <Uint8List>[];
         var currentChunkData = <int>[];
+        var currentNonce = <int>[];
         int? expectedChunkLength;
-
+        var readingNonce = true;
+        
         await for (var chunk in inputStream) {
           var offset = 0;
-
+          
           while (offset < chunk.length) {
-            if (expectedChunkLength == null) {
+            if (readingNonce) {
+              if (currentNonce.length < 12) {
+                final needed = 12 - currentNonce.length;
+                final available = chunk.length - offset;
+                final toTake = available < needed ? available : needed;
+                currentNonce.addAll(chunk.sublist(offset, offset + toTake));
+                offset += toTake;
+                
+                if (currentNonce.length == 12) {
+                  readingNonce = false;
+                }
+              }
+            } else if (expectedChunkLength == null) {
               if (currentChunkData.length < 4) {
                 final needed = 4 - currentChunkData.length;
                 final available = chunk.length - offset;
                 final toTake = available < needed ? available : needed;
                 currentChunkData.addAll(chunk.sublist(offset, offset + toTake));
                 offset += toTake;
-
+                
                 if (currentChunkData.length == 4) {
                   final lengthBytes = ByteData.sublistView(
                     Uint8List.fromList(currentChunkData),
                   );
                   expectedChunkLength = lengthBytes.getUint32(0, Endian.big);
-                  if (kDebugMode) {
-                    debugPrint(
-                      '[DECRYPT] Chunk $chunkIndex: expecting $expectedChunkLength bytes',
-                    );
-                  }
                   currentChunkData.clear();
                 }
               }
@@ -539,33 +709,64 @@ class EncryptionService {
               final toTake = available < needed ? available : needed;
               currentChunkData.addAll(chunk.sublist(offset, offset + toTake));
               offset += toTake;
-
+              
               if (currentChunkData.length == expectedChunkLength) {
-                final chunkData = Uint8List.fromList(currentChunkData);
-
-                final passwordBytes = utf8.encode(password);
-                final decryptedChunk = RustCrypto.decryptData(
-                  chunkData,
-                  passwordBytes,
-                  iv.bytes,
-                );
-                if (kDebugMode) {
-                  debugPrint(
-                    '[DECRYPT] Chunk $chunkIndex decrypted: ${decryptedChunk.length} bytes',
-                  );
-                }
-                outputSink.add(decryptedChunk);
-                chunkIndex++;
-
+                batchChunks.add(Uint8List.fromList(currentChunkData));
+                batchNonces.add(Uint8List.fromList(currentNonce));
+                
                 currentChunkData.clear();
+                currentNonce.clear();
                 expectedChunkLength = null;
+                readingNonce = true;
+                
+                if (batchChunks.length >= parallelBatchSize) {
+                  if (kDebugMode) {
+                    debugPrint(
+                      '[DECRYPT] Processing batch of ${batchChunks.length} chunks in parallel (chunks $totalChunksProcessed-${totalChunksProcessed + batchChunks.length - 1})',
+                    );
+                  }
+                  
+                  final decryptedBatch = RustCrypto.decryptDataParallel(
+                    batchChunks,
+                    passwordBytes,
+                    batchNonces,
+                  );
+                  
+                  for (var decrypted in decryptedBatch) {
+                    outputSink.add(decrypted);
+                  }
+                  
+                  totalChunksProcessed += batchChunks.length;
+                  batchChunks.clear();
+                  batchNonces.clear();
+                }
               }
             }
           }
         }
-
+        
+        if (batchChunks.isNotEmpty) {
+          if (kDebugMode) {
+            debugPrint(
+              '[DECRYPT] Processing final batch of ${batchChunks.length} chunks in parallel',
+            );
+          }
+          
+          final decryptedBatch = RustCrypto.decryptDataParallel(
+            batchChunks,
+            passwordBytes,
+            batchNonces,
+          );
+          
+          for (var decrypted in decryptedBatch) {
+            outputSink.add(decrypted);
+          }
+          
+          totalChunksProcessed += batchChunks.length;
+        }
+        
         if (kDebugMode) {
-          debugPrint('[DECRYPT] Total chunks decrypted: $chunkIndex');
+          debugPrint('[DECRYPT] Total chunks decrypted: $totalChunksProcessed');
         }
       }
 

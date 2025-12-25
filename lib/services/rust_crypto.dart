@@ -28,7 +28,7 @@ class RustCrypto {
     }
   }
 
-  static Uint8List encryptData(Uint8List data, Uint8List password, Uint8List iv) {
+  static Uint8List encryptData(Uint8List data, Uint8List password, Uint8List nonce) {
     _loadLibrary();
     
     final encryptFunc = _lib!.lookupFunction<
@@ -37,7 +37,7 @@ class RustCrypto {
         ffi.Size dataLen,
         ffi.Pointer<ffi.Uint8> passwordPtr,
         ffi.Size passwordLen,
-        ffi.Pointer<ffi.Uint8> ivPtr,
+        ffi.Pointer<ffi.Uint8> noncePtr,
         ffi.Pointer<ffi.Uint8> outputPtr,
         ffi.Pointer<ffi.Size> outputLen,
       ),
@@ -46,7 +46,7 @@ class RustCrypto {
         int dataLen,
         ffi.Pointer<ffi.Uint8> passwordPtr,
         int passwordLen,
-        ffi.Pointer<ffi.Uint8> ivPtr,
+        ffi.Pointer<ffi.Uint8> noncePtr,
         ffi.Pointer<ffi.Uint8> outputPtr,
         ffi.Pointer<ffi.Size> outputLen,
       )
@@ -54,7 +54,7 @@ class RustCrypto {
 
     final dataPtr = _allocateUint8List(data);
     final passwordPtr = _allocateUint8List(password);
-    final ivPtr = _allocateUint8List(iv);
+    final noncePtr = _allocateUint8List(nonce);
     final outputLenPtr = calloc<ffi.Size>();
 
     try {
@@ -63,7 +63,7 @@ class RustCrypto {
         data.length,
         passwordPtr,
         password.length,
-        ivPtr,
+        noncePtr,
         ffi.nullptr,
         outputLenPtr,
       );
@@ -81,7 +81,7 @@ class RustCrypto {
           data.length,
           passwordPtr,
           password.length,
-          ivPtr,
+          noncePtr,
           outputPtr,
           outputLenPtr,
         );
@@ -99,7 +99,7 @@ class RustCrypto {
     } finally {
       calloc.free(dataPtr);
       calloc.free(passwordPtr);
-      calloc.free(ivPtr);
+      calloc.free(noncePtr);
       calloc.free(outputLenPtr);
     }
   }
@@ -107,7 +107,7 @@ class RustCrypto {
   static Uint8List decryptData(
     Uint8List encrypted,
     Uint8List password,
-    Uint8List iv,
+    Uint8List nonce,
   ) {
     _loadLibrary();
     
@@ -117,7 +117,7 @@ class RustCrypto {
         ffi.Size encryptedLen,
         ffi.Pointer<ffi.Uint8> passwordPtr,
         ffi.Size passwordLen,
-        ffi.Pointer<ffi.Uint8> ivPtr,
+        ffi.Pointer<ffi.Uint8> noncePtr,
         ffi.Pointer<ffi.Uint8> outputPtr,
         ffi.Pointer<ffi.Size> outputLen,
       ),
@@ -126,7 +126,7 @@ class RustCrypto {
         int encryptedLen,
         ffi.Pointer<ffi.Uint8> passwordPtr,
         int passwordLen,
-        ffi.Pointer<ffi.Uint8> ivPtr,
+        ffi.Pointer<ffi.Uint8> noncePtr,
         ffi.Pointer<ffi.Uint8> outputPtr,
         ffi.Pointer<ffi.Size> outputLen,
       )
@@ -134,7 +134,7 @@ class RustCrypto {
 
     final encryptedPtr = _allocateUint8List(encrypted);
     final passwordPtr = _allocateUint8List(password);
-    final ivPtr = _allocateUint8List(iv);
+    final noncePtr = _allocateUint8List(nonce);
     final outputLenPtr = calloc<ffi.Size>();
 
     try {
@@ -143,7 +143,7 @@ class RustCrypto {
         encrypted.length,
         passwordPtr,
         password.length,
-        ivPtr,
+        noncePtr,
         ffi.nullptr,
         outputLenPtr,
       );
@@ -161,7 +161,7 @@ class RustCrypto {
           encrypted.length,
           passwordPtr,
           password.length,
-          ivPtr,
+          noncePtr,
           outputPtr,
           outputLenPtr,
         );
@@ -179,7 +179,7 @@ class RustCrypto {
     } finally {
       calloc.free(encryptedPtr);
       calloc.free(passwordPtr);
-      calloc.free(ivPtr);
+      calloc.free(noncePtr);
       calloc.free(outputLenPtr);
     }
   }
@@ -223,5 +223,241 @@ class RustCrypto {
       ptr[i] = list[i];
     }
     return ptr;
+  }
+
+  static List<Uint8List> encryptDataParallel(
+    List<Uint8List> chunks,
+    Uint8List password,
+    List<Uint8List> nonces,
+  ) {
+    _loadLibrary();
+
+    if (chunks.isEmpty || chunks.length != nonces.length) {
+      throw ArgumentError('Chunks and nonces must have the same length');
+    }
+
+    final encryptFunc = _lib!.lookupFunction<
+      ffi.Int32 Function(
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> chunksPtr,
+        ffi.Pointer<ffi.Size> chunkLens,
+        ffi.Size numChunks,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        ffi.Size passwordLen,
+        ffi.Pointer<ffi.Uint8> noncesPtr,
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> outputsPtr,
+        ffi.Pointer<ffi.Size> outputLens,
+      ),
+      int Function(
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> chunksPtr,
+        ffi.Pointer<ffi.Size> chunkLens,
+        int numChunks,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        int passwordLen,
+        ffi.Pointer<ffi.Uint8> noncesPtr,
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> outputsPtr,
+        ffi.Pointer<ffi.Size> outputLens,
+      )
+    >('encrypt_data_parallel');
+
+    final numChunks = chunks.length;
+    final chunkPtrs = calloc<ffi.Pointer<ffi.Uint8>>(numChunks);
+    final chunkLens = calloc<ffi.Size>(numChunks);
+    final passwordPtr = _allocateUint8List(password);
+    
+    final totalNonceSize = nonces.length * 12;
+    final noncesPtr = calloc<ffi.Uint8>(totalNonceSize);
+    for (var i = 0; i < nonces.length; i++) {
+      for (var j = 0; j < 12; j++) {
+        noncesPtr[i * 12 + j] = nonces[i][j];
+      }
+    }
+
+    for (var i = 0; i < numChunks; i++) {
+      chunkPtrs[i] = _allocateUint8List(chunks[i]);
+      chunkLens[i] = chunks[i].length;
+    }
+
+    final outputPtrs = calloc<ffi.Pointer<ffi.Uint8>>(numChunks);
+    final outputLens = calloc<ffi.Size>(numChunks);
+
+    for (var i = 0; i < numChunks; i++) {
+      outputPtrs[i] = ffi.nullptr;
+    }
+
+    try {
+      var result = encryptFunc(
+        chunkPtrs,
+        chunkLens,
+        numChunks,
+        passwordPtr,
+        password.length,
+        noncesPtr,
+        outputPtrs,
+        outputLens,
+      );
+
+      if (result != 0) {
+        throw Exception('Parallel encryption failed with code: $result');
+      }
+
+      for (var i = 0; i < numChunks; i++) {
+        final len = outputLens[i];
+        outputPtrs[i] = calloc<ffi.Uint8>(len);
+      }
+
+      result = encryptFunc(
+        chunkPtrs,
+        chunkLens,
+        numChunks,
+        passwordPtr,
+        password.length,
+        noncesPtr,
+        outputPtrs,
+        outputLens,
+      );
+
+      if (result != 0) {
+        throw Exception('Parallel encryption failed with code: $result');
+      }
+
+      final results = <Uint8List>[];
+      for (var i = 0; i < numChunks; i++) {
+        final len = outputLens[i];
+        results.add(Uint8List.fromList(outputPtrs[i].asTypedList(len)));
+      }
+
+      return results;
+    } finally {
+      for (var i = 0; i < numChunks; i++) {
+        calloc.free(chunkPtrs[i]);
+        if (outputPtrs[i] != ffi.nullptr) {
+          calloc.free(outputPtrs[i]);
+        }
+      }
+      calloc.free(chunkPtrs);
+      calloc.free(chunkLens);
+      calloc.free(passwordPtr);
+      calloc.free(noncesPtr);
+      calloc.free(outputPtrs);
+      calloc.free(outputLens);
+    }
+  }
+
+  static List<Uint8List> decryptDataParallel(
+    List<Uint8List> chunks,
+    Uint8List password,
+    List<Uint8List> nonces,
+  ) {
+    _loadLibrary();
+
+    if (chunks.isEmpty || chunks.length != nonces.length) {
+      throw ArgumentError('Chunks and nonces must have the same length');
+    }
+
+    final decryptFunc = _lib!.lookupFunction<
+      ffi.Int32 Function(
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> chunksPtr,
+        ffi.Pointer<ffi.Size> chunkLens,
+        ffi.Size numChunks,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        ffi.Size passwordLen,
+        ffi.Pointer<ffi.Uint8> noncesPtr,
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> outputsPtr,
+        ffi.Pointer<ffi.Size> outputLens,
+      ),
+      int Function(
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> chunksPtr,
+        ffi.Pointer<ffi.Size> chunkLens,
+        int numChunks,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        int passwordLen,
+        ffi.Pointer<ffi.Uint8> noncesPtr,
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> outputsPtr,
+        ffi.Pointer<ffi.Size> outputLens,
+      )
+    >('decrypt_data_parallel');
+
+    final numChunks = chunks.length;
+    final chunkPtrs = calloc<ffi.Pointer<ffi.Uint8>>(numChunks);
+    final chunkLens = calloc<ffi.Size>(numChunks);
+    final passwordPtr = _allocateUint8List(password);
+    
+    final totalNonceSize = nonces.length * 12;
+    final noncesPtr = calloc<ffi.Uint8>(totalNonceSize);
+    for (var i = 0; i < nonces.length; i++) {
+      for (var j = 0; j < 12; j++) {
+        noncesPtr[i * 12 + j] = nonces[i][j];
+      }
+    }
+
+    for (var i = 0; i < numChunks; i++) {
+      chunkPtrs[i] = _allocateUint8List(chunks[i]);
+      chunkLens[i] = chunks[i].length;
+    }
+
+    final outputPtrs = calloc<ffi.Pointer<ffi.Uint8>>(numChunks);
+    final outputLens = calloc<ffi.Size>(numChunks);
+
+    for (var i = 0; i < numChunks; i++) {
+      outputPtrs[i] = ffi.nullptr;
+    }
+
+    try {
+      var result = decryptFunc(
+        chunkPtrs,
+        chunkLens,
+        numChunks,
+        passwordPtr,
+        password.length,
+        noncesPtr,
+        outputPtrs,
+        outputLens,
+      );
+
+      if (result != 0) {
+        throw Exception('Parallel decryption failed with code: $result');
+      }
+
+      for (var i = 0; i < numChunks; i++) {
+        final len = outputLens[i];
+        outputPtrs[i] = calloc<ffi.Uint8>(len);
+      }
+
+      result = decryptFunc(
+        chunkPtrs,
+        chunkLens,
+        numChunks,
+        passwordPtr,
+        password.length,
+        noncesPtr,
+        outputPtrs,
+        outputLens,
+      );
+
+      if (result != 0) {
+        throw Exception('Parallel decryption failed with code: $result');
+      }
+
+      final results = <Uint8List>[];
+      for (var i = 0; i < numChunks; i++) {
+        final len = outputLens[i];
+        results.add(Uint8List.fromList(outputPtrs[i].asTypedList(len)));
+      }
+
+      return results;
+    } finally {
+      for (var i = 0; i < numChunks; i++) {
+        calloc.free(chunkPtrs[i]);
+        if (outputPtrs[i] != ffi.nullptr) {
+          calloc.free(outputPtrs[i]);
+        }
+      }
+      calloc.free(chunkPtrs);
+      calloc.free(chunkLens);
+      calloc.free(passwordPtr);
+      calloc.free(noncesPtr);
+      calloc.free(outputPtrs);
+      calloc.free(outputLens);
+    }
   }
 }

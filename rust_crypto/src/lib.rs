@@ -1,13 +1,14 @@
-use aes::Aes256;
-use cbc::{Decryptor, Encryptor};
-use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use std::slice;
+use std::sync::Arc;
 
-type Aes256CbcEnc = Encryptor<Aes256>;
-type Aes256CbcDec = Decryptor<Aes256>;
-
-const BLOCK_SIZE: usize = 16;
+const NONCE_SIZE: usize = 12;
+const TAG_SIZE: usize = 16;
 
 fn derive_key(password: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -18,36 +19,130 @@ fn derive_key(password: &[u8]) -> [u8; 32] {
     key
 }
 
-fn pkcs7_pad(data: &[u8]) -> Vec<u8> {
-    let padding_len = BLOCK_SIZE - (data.len() % BLOCK_SIZE);
-    let mut padded = Vec::with_capacity(data.len() + padding_len);
-    padded.extend_from_slice(data);
-    padded.extend(std::iter::repeat(padding_len as u8).take(padding_len));
-    padded
-}
-
-fn pkcs7_unpad(data: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if data.is_empty() {
-        return Err("Empty data");
-    }
-    
-    let padding_len = data[data.len() - 1] as usize;
-    
-    if padding_len == 0 || padding_len > BLOCK_SIZE {
-        return Err("Invalid padding");
-    }
-    
-    if data.len() < padding_len {
-        return Err("Invalid padding length");
-    }
-    
-    for i in 0..padding_len {
-        if data[data.len() - 1 - i] != padding_len as u8 {
-            return Err("Invalid padding bytes");
+#[no_mangle]
+pub extern "C" fn encrypt_data_parallel(
+    chunks_ptr: *const *const u8,
+    chunk_lens: *const usize,
+    num_chunks: usize,
+    password_ptr: *const u8,
+    password_len: usize,
+    nonces_ptr: *const u8,
+    outputs_ptr: *mut *mut u8,
+    output_lens: *mut usize,
+) -> i32 {
+    unsafe {
+        let password = slice::from_raw_parts(password_ptr, password_len);
+        let key = derive_key(password);
+        let key_arc = Arc::new(key);
+        
+        let chunk_ptrs = slice::from_raw_parts(chunks_ptr, num_chunks);
+        let chunk_lengths = slice::from_raw_parts(chunk_lens, num_chunks);
+        let nonces = slice::from_raw_parts(nonces_ptr, num_chunks * NONCE_SIZE);
+        
+        let chunks: Vec<&[u8]> = chunk_ptrs
+            .iter()
+            .zip(chunk_lengths.iter())
+            .map(|(ptr, len)| slice::from_raw_parts(*ptr, *len))
+            .collect();
+        
+        let results: Result<Vec<Vec<u8>>, i32> = chunks
+            .par_iter()
+            .enumerate()
+            .map(|(i, chunk)| {
+                let cipher = Aes256Gcm::new_from_slice(&*key_arc)
+                    .map_err(|_| -1)?;
+                
+                let nonce_offset = i * NONCE_SIZE;
+                let nonce = Nonce::from_slice(&nonces[nonce_offset..nonce_offset + NONCE_SIZE]);
+                
+                cipher.encrypt(nonce, chunk.as_ref())
+                    .map_err(|_| -2)
+            })
+            .collect();
+        
+        match results {
+            Ok(encrypted_chunks) => {
+                let output_lens_slice = slice::from_raw_parts_mut(output_lens, num_chunks);
+                let outputs_slice = slice::from_raw_parts_mut(outputs_ptr, num_chunks);
+                
+                for (i, encrypted) in encrypted_chunks.iter().enumerate() {
+                    output_lens_slice[i] = encrypted.len();
+                    if !outputs_slice[i].is_null() {
+                        std::ptr::copy_nonoverlapping(
+                            encrypted.as_ptr(),
+                            outputs_slice[i],
+                            encrypted.len(),
+                        );
+                    }
+                }
+                0
+            }
+            Err(code) => code,
         }
     }
-    
-    Ok(data[..data.len() - padding_len].to_vec())
+}
+
+#[no_mangle]
+pub extern "C" fn decrypt_data_parallel(
+    chunks_ptr: *const *const u8,
+    chunk_lens: *const usize,
+    num_chunks: usize,
+    password_ptr: *const u8,
+    password_len: usize,
+    nonces_ptr: *const u8,
+    outputs_ptr: *mut *mut u8,
+    output_lens: *mut usize,
+) -> i32 {
+    unsafe {
+        let password = slice::from_raw_parts(password_ptr, password_len);
+        let key = derive_key(password);
+        let key_arc = Arc::new(key);
+        
+        let chunk_ptrs = slice::from_raw_parts(chunks_ptr, num_chunks);
+        let chunk_lengths = slice::from_raw_parts(chunk_lens, num_chunks);
+        let nonces = slice::from_raw_parts(nonces_ptr, num_chunks * NONCE_SIZE);
+        
+        let chunks: Vec<&[u8]> = chunk_ptrs
+            .iter()
+            .zip(chunk_lengths.iter())
+            .map(|(ptr, len)| slice::from_raw_parts(*ptr, *len))
+            .collect();
+        
+        let results: Result<Vec<Vec<u8>>, i32> = chunks
+            .par_iter()
+            .enumerate()
+            .map(|(i, chunk)| {
+                let cipher = Aes256Gcm::new_from_slice(&*key_arc)
+                    .map_err(|_| -1)?;
+                
+                let nonce_offset = i * NONCE_SIZE;
+                let nonce = Nonce::from_slice(&nonces[nonce_offset..nonce_offset + NONCE_SIZE]);
+                
+                cipher.decrypt(nonce, chunk.as_ref())
+                    .map_err(|_| -2)
+            })
+            .collect();
+        
+        match results {
+            Ok(decrypted_chunks) => {
+                let output_lens_slice = slice::from_raw_parts_mut(output_lens, num_chunks);
+                let outputs_slice = slice::from_raw_parts_mut(outputs_ptr, num_chunks);
+                
+                for (i, decrypted) in decrypted_chunks.iter().enumerate() {
+                    output_lens_slice[i] = decrypted.len();
+                    if !outputs_slice[i].is_null() {
+                        std::ptr::copy_nonoverlapping(
+                            decrypted.as_ptr(),
+                            outputs_slice[i],
+                            decrypted.len(),
+                        );
+                    }
+                }
+                0
+            }
+            Err(code) => code,
+        }
+    }
 }
 
 #[no_mangle]
@@ -56,23 +151,27 @@ pub extern "C" fn encrypt_data(
     data_len: usize,
     password_ptr: *const u8,
     password_len: usize,
-    iv_ptr: *const u8,
+    nonce_ptr: *const u8,
     output_ptr: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
     unsafe {
         let data = slice::from_raw_parts(data_ptr, data_len);
         let password = slice::from_raw_parts(password_ptr, password_len);
-        let iv = slice::from_raw_parts(iv_ptr, 16);
+        let nonce_bytes = slice::from_raw_parts(nonce_ptr, NONCE_SIZE);
         
         let key = derive_key(password);
-        let padded_data = pkcs7_pad(data);
+        let cipher = match Aes256Gcm::new_from_slice(&key) {
+            Ok(c) => c,
+            Err(_) => return -1,
+        };
         
-        let mut iv_array = [0u8; 16];
-        iv_array.copy_from_slice(iv);
+        let nonce = Nonce::from_slice(nonce_bytes);
         
-        let cipher = Aes256CbcEnc::new(&key.into(), &iv_array.into());
-        let encrypted = cipher.encrypt_padded_vec_mut::<cbc::cipher::block_padding::NoPadding>(&padded_data);
+        let encrypted = match cipher.encrypt(nonce, data) {
+            Ok(e) => e,
+            Err(_) => return -2,
+        };
         
         *output_len = encrypted.len();
         
@@ -90,36 +189,32 @@ pub extern "C" fn decrypt_data(
     encrypted_len: usize,
     password_ptr: *const u8,
     password_len: usize,
-    iv_ptr: *const u8,
+    nonce_ptr: *const u8,
     output_ptr: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
     unsafe {
         let encrypted = slice::from_raw_parts(encrypted_ptr, encrypted_len);
         let password = slice::from_raw_parts(password_ptr, password_len);
-        let iv = slice::from_raw_parts(iv_ptr, 16);
+        let nonce_bytes = slice::from_raw_parts(nonce_ptr, NONCE_SIZE);
         
         let key = derive_key(password);
-        
-        let mut iv_array = [0u8; 16];
-        iv_array.copy_from_slice(iv);
-        
-        let cipher = Aes256CbcDec::new(&key.into(), &iv_array.into());
-        
-        let decrypted = match cipher.decrypt_padded_vec_mut::<cbc::cipher::block_padding::NoPadding>(encrypted) {
-            Ok(d) => d,
+        let cipher = match Aes256Gcm::new_from_slice(&key) {
+            Ok(c) => c,
             Err(_) => return -1,
         };
         
-        let unpadded = match pkcs7_unpad(&decrypted) {
-            Ok(u) => u,
+        let nonce = Nonce::from_slice(nonce_bytes);
+        
+        let decrypted = match cipher.decrypt(nonce, encrypted) {
+            Ok(d) => d,
             Err(_) => return -2,
         };
         
-        *output_len = unpadded.len();
+        *output_len = decrypted.len();
         
         if !output_ptr.is_null() {
-            std::ptr::copy_nonoverlapping(unpadded.as_ptr(), output_ptr, unpadded.len());
+            std::ptr::copy_nonoverlapping(decrypted.as_ptr(), output_ptr, decrypted.len());
         }
         
         0
@@ -155,9 +250,9 @@ mod tests {
     fn test_encrypt_decrypt() {
         let data = b"Hello, World! This is a test message.";
         let password = b"secure_password";
-        let iv = [0u8; 16];
+        let nonce = [0u8; NONCE_SIZE];
         
-        let mut encrypted = vec![0u8; data.len() + 32];
+        let mut encrypted = vec![0u8; data.len() + TAG_SIZE];
         let mut encrypted_len = 0usize;
         
         let result = unsafe {
@@ -166,7 +261,7 @@ mod tests {
                 data.len(),
                 password.as_ptr(),
                 password.len(),
-                iv.as_ptr(),
+                nonce.as_ptr(),
                 encrypted.as_mut_ptr(),
                 &mut encrypted_len as *mut usize,
             )
@@ -184,7 +279,7 @@ mod tests {
                 encrypted.len(),
                 password.as_ptr(),
                 password.len(),
-                iv.as_ptr(),
+                nonce.as_ptr(),
                 decrypted.as_mut_ptr(),
                 &mut decrypted_len as *mut usize,
             )
@@ -193,15 +288,5 @@ mod tests {
         assert_eq!(result, 0);
         decrypted.truncate(decrypted_len);
         assert_eq!(decrypted, data);
-    }
-
-    #[test]
-    fn test_padding() {
-        let data = b"12345678901234";
-        let padded = pkcs7_pad(data);
-        assert_eq!(padded.len() % BLOCK_SIZE, 0);
-        
-        let unpadded = pkcs7_unpad(&padded).unwrap();
-        assert_eq!(unpadded, data);
     }
 }
