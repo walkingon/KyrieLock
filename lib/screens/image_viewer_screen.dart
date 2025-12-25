@@ -35,10 +35,20 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       Uint8List imageData;
 
       if (widget.isEncrypted && widget.password != null) {
-        imageData = await EncryptionService.decryptFile(
+        final decryptResult = await EncryptionService.decryptFile(
           widget.imagePath,
           widget.password!,
         );
+        
+        if (decryptResult.data != null) {
+          imageData = decryptResult.data!;
+        } else if (decryptResult.tempFilePath != null) {
+          final tempFile = File(decryptResult.tempFilePath!);
+          imageData = await tempFile.readAsBytes();
+          await tempFile.delete();
+        } else {
+          throw Exception('Invalid decrypt result');
+        }
       } else {
         final file = File(widget.imagePath);
         imageData = await file.readAsBytes();

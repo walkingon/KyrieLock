@@ -5,6 +5,22 @@ import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'rust_crypto.dart';
 
+class DecryptResult {
+  final Uint8List? data;
+  final String? tempFilePath;
+  final bool isLargeFile;
+
+  DecryptResult._({this.data, this.tempFilePath, required this.isLargeFile});
+
+  factory DecryptResult.inMemory(Uint8List data) {
+    return DecryptResult._(data: data, isLargeFile: false);
+  }
+
+  factory DecryptResult.tempFile(String path) {
+    return DecryptResult._(tempFilePath: path, isLargeFile: true);
+  }
+}
+
 class EncryptionService {
   static const String magicString = 'KYRIE_LOCK';
   static const String encryptedExtension = 'kyl';
@@ -197,14 +213,14 @@ class EncryptionService {
     }
   }
 
-  static Future<Uint8List> decryptFile(String filePath, String password) async {
+  static Future<DecryptResult> decryptFile(String filePath, String password) async {
     final file = File(filePath);
     if (!await file.exists()) {
       throw Exception('File does not exist');
     }
 
     final fileSize = await file.length();
-    const int chunkSize = 64 * 1024 * 1024;
+    const int memoryThreshold = 100 * 1024 * 1024;
     print('[DECRYPT] Starting decryption: fileSize=$fileSize');
 
     final headerBytes = await file.openRead(0, headerSize + 1).first;
@@ -236,8 +252,8 @@ class EncryptionService {
     final encryptedDataSize = fileSize - encryptedDataStart;
     print('[DECRYPT] Encrypted data: start=$encryptedDataStart, size=$encryptedDataSize');
 
-    if (encryptedDataSize <= chunkSize * 2) {
-      print('[DECRYPT] Small file, decrypting as single chunk');
+    if (encryptedDataSize <= memoryThreshold) {
+      print('[DECRYPT] Small file, decrypting in memory');
       final allBytes = await file.readAsBytes();
       final encryptedData = allBytes.sublist(encryptedDataStart);
       print('[DECRYPT] Encrypted data length: ${encryptedData.length}');
@@ -247,7 +263,7 @@ class EncryptionService {
           final passwordBytes = utf8.encode(password);
           final decrypted = RustCrypto.decryptData(encryptedData, passwordBytes, iv.bytes);
           print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
-          return decrypted;
+          return DecryptResult.inMemory(decrypted);
         } else {
           final key = encrypt.Key(_deriveKey(password));
           final encrypter = encrypt.Encrypter(encrypt.AES(key));
@@ -256,83 +272,44 @@ class EncryptionService {
             iv: iv,
           );
           print('[DECRYPT] Decrypted successfully: ${decrypted.length} bytes');
-          return Uint8List.fromList(decrypted);
+          return DecryptResult.inMemory(Uint8List.fromList(decrypted));
         }
       } catch (e) {
         print('[DECRYPT] Error during decryption: $e');
         throw Exception('Invalid password or corrupted file');
       }
     } else {
-      print('[DECRYPT] Large file, decrypting in chunks');
-      final inputStream = file.openRead(encryptedDataStart);
-      final decryptedData = BytesBuilder();
-      int chunkIndex = 0;
-      var currentChunkData = <int>[];
-      int? expectedChunkLength;
+      print('[DECRYPT] Large file detected (${(encryptedDataSize / 1024 / 1024).toStringAsFixed(2)} MB), decrypting to temp file');
+      final tempDir = Directory.systemTemp;
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final originalExt = _getOriginalExtension(filePath);
+      final tempFile = File(
+        '${tempDir.path}/temp_decrypt_${timestamp}$originalExt',
+      );
 
       try {
-        await for (var chunk in inputStream) {
-          var offset = 0;
-          
-          while (offset < chunk.length) {
-            if (expectedChunkLength == null) {
-              if (currentChunkData.length < 4) {
-                final needed = 4 - currentChunkData.length;
-                final available = chunk.length - offset;
-                final toTake = available < needed ? available : needed;
-                currentChunkData.addAll(chunk.sublist(offset, offset + toTake));
-                offset += toTake;
-                
-                if (currentChunkData.length == 4) {
-                  final lengthBytes = ByteData.sublistView(Uint8List.fromList(currentChunkData));
-                  expectedChunkLength = lengthBytes.getUint32(0, Endian.big);
-                  print('[DECRYPT] Chunk $chunkIndex: expecting $expectedChunkLength bytes');
-                  currentChunkData.clear();
-                }
-              }
-            } else {
-              final needed = expectedChunkLength - currentChunkData.length;
-              final available = chunk.length - offset;
-              final toTake = available < needed ? available : needed;
-              currentChunkData.addAll(chunk.sublist(offset, offset + toTake));
-              offset += toTake;
-              
-              if (currentChunkData.length == expectedChunkLength) {
-                final chunkData = Uint8List.fromList(currentChunkData);
-                
-                Uint8List decryptedChunk;
-                if (useRustCrypto) {
-                  final passwordBytes = utf8.encode(password);
-                  decryptedChunk = RustCrypto.decryptData(chunkData, passwordBytes, iv.bytes);
-                } else {
-                  final key = encrypt.Key(_deriveKey(password));
-                  final encrypter = encrypt.Encrypter(encrypt.AES(key));
-                  final decrypted = encrypter.decryptBytes(
-                    encrypt.Encrypted(chunkData),
-                    iv: iv,
-                  );
-                  decryptedChunk = Uint8List.fromList(decrypted);
-                }
-                print('[DECRYPT] Chunk $chunkIndex decrypted: ${decryptedChunk.length} bytes');
-                decryptedData.add(decryptedChunk);
-                chunkIndex++;
-                
-                currentChunkData.clear();
-                expectedChunkLength = null;
-              }
-            }
-          }
-        }
-
-        print('[DECRYPT] Total chunks decrypted: $chunkIndex');
-        final result = decryptedData.toBytes();
-        print('[DECRYPT] Total decrypted size: ${result.length} bytes');
-        return result;
+        await decryptFileToPath(filePath, tempFile.path, password);
+        print('[DECRYPT] Large file decrypted successfully to temp file: ${tempFile.path}');
+        return DecryptResult.tempFile(tempFile.path);
       } catch (e) {
-        print('[DECRYPT] Error during chunked decryption: $e');
-        throw Exception('Invalid password or corrupted file');
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
+        rethrow;
       }
     }
+  }
+
+  static String _getOriginalExtension(String encryptedPath) {
+    final fileName = encryptedPath.split(Platform.pathSeparator).last;
+    if (fileName.endsWith('.$encryptedExtension')) {
+      final originalName = fileName.substring(0, fileName.length - encryptedExtension.length - 1);
+      final lastDot = originalName.lastIndexOf('.');
+      if (lastDot != -1) {
+        return originalName.substring(lastDot);
+      }
+    }
+    return '';
   }
 
   static Future<void> decryptFileToPath(

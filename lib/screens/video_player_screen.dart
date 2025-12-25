@@ -40,17 +40,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       String videoPath;
 
       if (widget.isEncrypted && widget.password != null) {
-        final decryptedData = await EncryptionService.decryptFile(
+        final decryptResult = await EncryptionService.decryptFile(
           widget.videoPath,
           widget.password!,
         );
 
-        final tempDir = Directory.systemTemp;
-        _tempVideoFile = File(
-          '${tempDir.path}/temp_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
-        );
-        await _tempVideoFile!.writeAsBytes(decryptedData);
-        videoPath = _tempVideoFile!.path;
+        if (decryptResult.isLargeFile && decryptResult.tempFilePath != null) {
+          videoPath = decryptResult.tempFilePath!;
+          _tempVideoFile = File(videoPath);
+        } else if (decryptResult.data != null) {
+          final tempDir = Directory.systemTemp;
+          _tempVideoFile = File(
+            '${tempDir.path}/temp_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
+          );
+          await _tempVideoFile!.writeAsBytes(decryptResult.data!);
+          videoPath = _tempVideoFile!.path;
+        } else {
+          throw Exception('Invalid decrypt result');
+        }
       } else {
         videoPath = widget.videoPath;
       }

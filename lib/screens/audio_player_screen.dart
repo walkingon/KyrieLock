@@ -36,21 +36,28 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
       String audioPath;
 
       if (widget.isEncrypted && widget.password != null) {
-        final decryptedData = await EncryptionService.decryptFile(
+        final decryptResult = await EncryptionService.decryptFile(
           widget.audioPath,
           widget.password!,
         );
 
-        final tempDir = Directory.systemTemp;
-        final originalName = EncryptionService.removeEncryptedExtension(
-          widget.audioPath.split(Platform.pathSeparator).last,
-        );
-        final ext = originalName.split('.').last;
-        _tempAudioFile = File(
-          '${tempDir.path}/temp_audio_${DateTime.now().millisecondsSinceEpoch}.$ext',
-        );
-        await _tempAudioFile!.writeAsBytes(decryptedData);
-        audioPath = _tempAudioFile!.path;
+        if (decryptResult.isLargeFile && decryptResult.tempFilePath != null) {
+          audioPath = decryptResult.tempFilePath!;
+          _tempAudioFile = File(audioPath);
+        } else if (decryptResult.data != null) {
+          final tempDir = Directory.systemTemp;
+          final originalName = EncryptionService.removeEncryptedExtension(
+            widget.audioPath.split(Platform.pathSeparator).last,
+          );
+          final ext = originalName.split('.').last;
+          _tempAudioFile = File(
+            '${tempDir.path}/temp_audio_${DateTime.now().millisecondsSinceEpoch}.$ext',
+          );
+          await _tempAudioFile!.writeAsBytes(decryptResult.data!);
+          audioPath = _tempAudioFile!.path;
+        } else {
+          throw Exception('Invalid decrypt result');
+        }
       } else {
         audioPath = widget.audioPath;
       }

@@ -38,17 +38,24 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
       String pdfPath;
 
       if (widget.isEncrypted && widget.password != null) {
-        final decryptedData = await EncryptionService.decryptFile(
+        final decryptResult = await EncryptionService.decryptFile(
           widget.pdfPath,
           widget.password!,
         );
 
-        final tempDir = Directory.systemTemp;
-        _tempPdfFile = File(
-          '${tempDir.path}/temp_pdf_${DateTime.now().millisecondsSinceEpoch}.pdf',
-        );
-        await _tempPdfFile!.writeAsBytes(decryptedData);
-        pdfPath = _tempPdfFile!.path;
+        if (decryptResult.isLargeFile && decryptResult.tempFilePath != null) {
+          pdfPath = decryptResult.tempFilePath!;
+          _tempPdfFile = File(pdfPath);
+        } else if (decryptResult.data != null) {
+          final tempDir = Directory.systemTemp;
+          _tempPdfFile = File(
+            '${tempDir.path}/temp_pdf_${DateTime.now().millisecondsSinceEpoch}.pdf',
+          );
+          await _tempPdfFile!.writeAsBytes(decryptResult.data!);
+          pdfPath = _tempPdfFile!.path;
+        } else {
+          throw Exception('Invalid decrypt result');
+        }
       } else {
         pdfPath = widget.pdfPath;
       }

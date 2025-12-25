@@ -34,11 +34,20 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
       String textContent;
 
       if (widget.isEncrypted && widget.password != null) {
-        final decryptedData = await EncryptionService.decryptFile(
+        final decryptResult = await EncryptionService.decryptFile(
           widget.textPath,
           widget.password!,
         );
-        textContent = String.fromCharCodes(decryptedData);
+        
+        if (decryptResult.data != null) {
+          textContent = String.fromCharCodes(decryptResult.data!);
+        } else if (decryptResult.tempFilePath != null) {
+          final tempFile = File(decryptResult.tempFilePath!);
+          textContent = await tempFile.readAsString();
+          await tempFile.delete();
+        } else {
+          throw Exception('Invalid decrypt result');
+        }
       } else {
         final file = File(widget.textPath);
         textContent = await file.readAsString();
