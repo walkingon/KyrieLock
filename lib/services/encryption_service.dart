@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'rust_crypto.dart';
 
 bool get _isMobilePlatform {
@@ -140,7 +140,7 @@ class EncryptionService {
       final isLargeFile = encryptedSize > chunkSize;
       
       if (isLargeFile) {
-        final tempDir = Directory.systemTemp;
+        final tempDir = await getTemporaryDirectory();
         final originalExtension = _getOriginalExtension(filePath);
         final tempFile = File(
           path.join(

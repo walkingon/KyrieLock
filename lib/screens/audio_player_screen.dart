@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/encryption_service.dart';
 
 class AudioPlayerScreen extends StatefulWidget {
@@ -45,7 +46,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
           audioPath = decryptResult.tempFilePath!;
           _tempAudioFile = File(audioPath);
         } else if (decryptResult.data != null) {
-          final tempDir = Directory.systemTemp;
+          final tempDir = await getTemporaryDirectory();
           final originalName = EncryptionService.removeEncryptedExtension(
             widget.audioPath.split(Platform.pathSeparator).last,
           );
@@ -85,16 +86,13 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     super.dispose();
   }
 
-  void _cleanupTempFile() {
-    if (_tempAudioFile != null) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        try {
-          if (_tempAudioFile!.existsSync()) {
-            _tempAudioFile!.deleteSync();
-          }
-        } catch (_) {
-        }
-      });
+  Future<void> _cleanupTempFile() async {
+    if (_tempAudioFile != null && _tempAudioFile!.existsSync()) {
+      try {
+        await _tempAudioFile!.delete();
+      } catch (e) {
+        debugPrint('Failed to delete temp audio file: $e');
+      }
     }
   }
 

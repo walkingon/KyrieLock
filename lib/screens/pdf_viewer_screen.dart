@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/encryption_service.dart';
 
 class PDFViewerScreen extends StatefulWidget {
@@ -47,7 +48,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
           pdfPath = decryptResult.tempFilePath!;
           _tempPdfFile = File(pdfPath);
         } else if (decryptResult.data != null) {
-          final tempDir = Directory.systemTemp;
+          final tempDir = await getTemporaryDirectory();
           _tempPdfFile = File(
             '${tempDir.path}/temp_pdf_${DateTime.now().millisecondsSinceEpoch}.pdf',
           );
@@ -129,16 +130,13 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
     super.dispose();
   }
 
-  void _cleanupTempFile() {
-    if (_tempPdfFile != null) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        try {
-          if (_tempPdfFile!.existsSync()) {
-            _tempPdfFile!.deleteSync();
-          }
-        } catch (_) {
-        }
-      });
+  Future<void> _cleanupTempFile() async {
+    if (_tempPdfFile != null && _tempPdfFile!.existsSync()) {
+      try {
+        await _tempPdfFile!.delete();
+      } catch (e) {
+        debugPrint('Failed to delete temp PDF file: $e');
+      }
     }
   }
 }

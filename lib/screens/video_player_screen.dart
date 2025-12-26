@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_player_win/video_player_win.dart';
 import 'package:chewie/chewie.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/encryption_service.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
@@ -49,7 +50,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           videoPath = decryptResult.tempFilePath!;
           _tempVideoFile = File(videoPath);
         } else if (decryptResult.data != null) {
-          final tempDir = Directory.systemTemp;
+          final tempDir = await getTemporaryDirectory();
           _tempVideoFile = File(
             '${tempDir.path}/temp_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
           );
@@ -89,22 +90,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
-    _videoPlayerController?.dispose();
     _chewieController?.dispose();
+    _videoPlayerController?.dispose();
     _cleanupTempFile();
     super.dispose();
   }
 
-  void _cleanupTempFile() {
-    if (_tempVideoFile != null) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        try {
-          if (_tempVideoFile!.existsSync()) {
-            _tempVideoFile!.deleteSync();
-          }
-        } catch (_) {
-        }
-      });
+  Future<void> _cleanupTempFile() async {
+    if (_tempVideoFile != null && _tempVideoFile!.existsSync()) {
+      try {
+        await _tempVideoFile!.delete();
+      } catch (e) {
+        debugPrint('Failed to delete temp video file: $e');
+      }
     }
   }
 

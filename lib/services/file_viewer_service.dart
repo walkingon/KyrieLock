@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart' as file_picker;
 import 'file_operations_service.dart';
 import 'encryption_service.dart';
 import '../screens/video_player_screen.dart';
@@ -82,10 +84,18 @@ class FileViewerService {
     }
 
     if (context.mounted) {
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => viewerScreen!),
       );
+      
+      if (Platform.isAndroid) {
+        try {
+          await file_picker.FilePicker.platform.clearTemporaryFiles();
+        } catch (e) {
+          debugPrint('Failed to clear file_picker cache: $e');
+        }
+      }
     }
   }
 }
