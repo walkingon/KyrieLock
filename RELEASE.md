@@ -28,7 +28,7 @@
 4. **自动构建**
    - GitHub Actions 会自动开始构建
    - 构建完成后会自动创建 Release
-   - 访问 `https://github.com/your-username/KyrieLock/releases` 查看
+   - 访问 `https://github.com/walkingon/KyrieLock/releases` 查看
 
 ### 支持的平台
 
