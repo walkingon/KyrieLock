@@ -1,5 +1,5 @@
 name: kyrie_lock
-description: "A new Flutter project."
+description: "A cross-platform, high-performance file encryption GUI client with a built-in viewer."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -60,6 +60,9 @@ dependencies:
   
   # FFI for Rust integration
   ffi: ^2.1.0
+  
+  # URL launcher
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
