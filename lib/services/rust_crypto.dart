@@ -460,4 +460,254 @@ class RustCrypto {
       calloc.free(outputLens);
     }
   }
+
+  static void encryptFile(
+    String inputPath,
+    String outputPath,
+    Uint8List password, {
+    String? hint,
+    bool isMobile = false,
+  }) {
+    _loadLibrary();
+
+    final encryptFileFunc = _lib!.lookupFunction<
+      ffi.Int32 Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Char> outputPathPtr,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        ffi.Size passwordLen,
+        ffi.Pointer<ffi.Char> hintPtr,
+        ffi.Bool isMobile,
+        ffi.Size cpuCores,
+      ),
+      int Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Char> outputPathPtr,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        int passwordLen,
+        ffi.Pointer<ffi.Char> hintPtr,
+        bool isMobile,
+        int cpuCores,
+      )
+    >('encrypt_file');
+
+    final inputPathPtr = inputPath.toNativeUtf8().cast<ffi.Char>();
+    final outputPathPtr = outputPath.toNativeUtf8().cast<ffi.Char>();
+    final passwordPtr = _allocateUint8List(password);
+    final hintPtr = hint != null 
+        ? hint.toNativeUtf8().cast<ffi.Char>() 
+        : ffi.nullptr;
+    final cpuCores = Platform.numberOfProcessors;
+
+    try {
+      final result = encryptFileFunc(
+        inputPathPtr,
+        outputPathPtr,
+        passwordPtr,
+        password.length,
+        hintPtr,
+        isMobile,
+        cpuCores,
+      );
+
+      if (result != 0) {
+        throw Exception('File encryption failed with code: $result');
+      }
+    } finally {
+      calloc.free(inputPathPtr);
+      calloc.free(outputPathPtr);
+      calloc.free(passwordPtr);
+      if (hintPtr != ffi.nullptr) {
+        calloc.free(hintPtr);
+      }
+    }
+  }
+
+  static void decryptFile(
+    String inputPath,
+    String outputPath,
+    Uint8List password, {
+    bool isMobile = false,
+  }) {
+    _loadLibrary();
+
+    final decryptFileFunc = _lib!.lookupFunction<
+      ffi.Int32 Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Char> outputPathPtr,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        ffi.Size passwordLen,
+        ffi.Bool isMobile,
+        ffi.Size cpuCores,
+      ),
+      int Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Char> outputPathPtr,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        int passwordLen,
+        bool isMobile,
+        int cpuCores,
+      )
+    >('decrypt_file');
+
+    final inputPathPtr = inputPath.toNativeUtf8().cast<ffi.Char>();
+    final outputPathPtr = outputPath.toNativeUtf8().cast<ffi.Char>();
+    final passwordPtr = _allocateUint8List(password);
+    final cpuCores = Platform.numberOfProcessors;
+
+    try {
+      final result = decryptFileFunc(
+        inputPathPtr,
+        outputPathPtr,
+        passwordPtr,
+        password.length,
+        isMobile,
+        cpuCores,
+      );
+
+      if (result != 0) {
+        throw Exception('File decryption failed with code: $result');
+      }
+    } finally {
+      calloc.free(inputPathPtr);
+      calloc.free(outputPathPtr);
+      calloc.free(passwordPtr);
+    }
+  }
+
+  static Uint8List decryptFileToMemory(
+    String inputPath,
+    Uint8List password, {
+    bool isMobile = false,
+  }) {
+    _loadLibrary();
+
+    final decryptFileToMemoryFunc = _lib!.lookupFunction<
+      ffi.Int32 Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        ffi.Size passwordLen,
+        ffi.Pointer<ffi.Uint8> outputPtr,
+        ffi.Pointer<ffi.Size> outputLen,
+        ffi.Bool isMobile,
+        ffi.Size cpuCores,
+      ),
+      int Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Uint8> passwordPtr,
+        int passwordLen,
+        ffi.Pointer<ffi.Uint8> outputPtr,
+        ffi.Pointer<ffi.Size> outputLen,
+        bool isMobile,
+        int cpuCores,
+      )
+    >('decrypt_file_to_memory');
+
+    final inputPathPtr = inputPath.toNativeUtf8().cast<ffi.Char>();
+    final passwordPtr = _allocateUint8List(password);
+    final outputLenPtr = calloc<ffi.Size>();
+    final cpuCores = Platform.numberOfProcessors;
+
+    try {
+      var result = decryptFileToMemoryFunc(
+        inputPathPtr,
+        passwordPtr,
+        password.length,
+        ffi.nullptr,
+        outputLenPtr,
+        isMobile,
+        cpuCores,
+      );
+
+      if (result != 0) {
+        throw Exception('File decryption to memory failed with code: $result');
+      }
+
+      final outputLen = outputLenPtr.value;
+      final outputPtr = calloc<ffi.Uint8>(outputLen);
+
+      try {
+        result = decryptFileToMemoryFunc(
+          inputPathPtr,
+          passwordPtr,
+          password.length,
+          outputPtr,
+          outputLenPtr,
+          isMobile,
+          cpuCores,
+        );
+
+        if (result != 0) {
+          throw Exception('File decryption to memory failed with code: $result');
+        }
+
+        return Uint8List.fromList(outputPtr.asTypedList(outputLen));
+      } finally {
+        calloc.free(outputPtr);
+      }
+    } finally {
+      calloc.free(inputPathPtr);
+      calloc.free(passwordPtr);
+      calloc.free(outputLenPtr);
+    }
+  }
+
+  static String getHintFromFile(String inputPath) {
+    _loadLibrary();
+
+    final getHintFunc = _lib!.lookupFunction<
+      ffi.Int32 Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Uint8> hintPtr,
+        ffi.Pointer<ffi.Size> hintLen,
+      ),
+      int Function(
+        ffi.Pointer<ffi.Char> inputPathPtr,
+        ffi.Pointer<ffi.Uint8> hintPtr,
+        ffi.Pointer<ffi.Size> hintLen,
+      )
+    >('get_hint_from_file');
+
+    final inputPathPtr = inputPath.toNativeUtf8().cast<ffi.Char>();
+    final hintLenPtr = calloc<ffi.Size>();
+
+    try {
+      var result = getHintFunc(
+        inputPathPtr,
+        ffi.nullptr,
+        hintLenPtr,
+      );
+
+      if (result != 0) {
+        throw Exception('Get hint failed with code: $result');
+      }
+
+      final hintLen = hintLenPtr.value;
+      if (hintLen == 0) {
+        return '';
+      }
+
+      final hintPtr = calloc<ffi.Uint8>(hintLen);
+
+      try {
+        result = getHintFunc(
+          inputPathPtr,
+          hintPtr,
+          hintLenPtr,
+        );
+
+        if (result != 0) {
+          throw Exception('Get hint failed with code: $result');
+        }
+
+        final hintBytes = Uint8List.fromList(hintPtr.asTypedList(hintLen));
+        return String.fromCharCodes(hintBytes);
+      } finally {
+        calloc.free(hintPtr);
+      }
+    } finally {
+      calloc.free(inputPathPtr);
+      calloc.free(hintLenPtr);
+    }
+  }
 }

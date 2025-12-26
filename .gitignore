@@ -56,3 +56,8 @@ rust_crypto/**/*.so
 rust_crypto/**/*.dylib
 rust_crypto/**/*.a
 rust_crypto/**/*.lib
+
+# Rust build artifacts in project root (development)
+rust_crypto.dll
+librust_crypto.so
+librust_crypto.dylib
