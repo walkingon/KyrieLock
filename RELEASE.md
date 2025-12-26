@@ -15,14 +15,14 @@
 2. **提交代码**
    ```bash
    git add .
-   git commit -m "Release v1.1.0"
+   git commit -m "Release v*.*.*"
    ```
 
 3. **创建并推送 tag**
    ```bash
-   git tag v1.1.0
+   git tag v*.*.*
    git push origin main
-   git push origin v1.1.0
+   git push origin v*.*.*
    ```
 
 4. **自动构建**
