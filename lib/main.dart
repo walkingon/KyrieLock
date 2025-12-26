@@ -10,11 +10,11 @@ import 'screens/about_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   if (Platform.isWindows) {
     await FileAssociationService.registerFileAssociation();
   }
-  
+
   runApp(const MyApp());
 }
 
@@ -26,7 +26,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'KyrieLock',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
       home: const HomePage(),
@@ -61,8 +61,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
   Future<void> _cleanupFilePickerCache() async {
     try {
@@ -94,7 +93,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         setState(() => _isProcessing = false);
         return;
       }
-      
+
       final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
       String? password;
 
@@ -462,7 +461,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       for (final filePath in filePaths) {
         final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
         if (!isEncrypted) {
-          _showMessage('文件 ${filePath.split(Platform.pathSeparator).last} 不是加密文件，已跳过', isError: true);
+          _showMessage(
+            '文件 ${filePath.split(Platform.pathSeparator).last} 不是加密文件，已跳过',
+            isError: true,
+          );
           continue;
         }
       }
@@ -535,16 +537,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           successFiles++;
         } catch (e) {
           failedFiles++;
-          
+
           final fileName = filePath.split(Platform.pathSeparator).last;
-          final outputName = EncryptionService.removeEncryptedExtension(fileName);
-          final outputPath = '$outputDirectory${Platform.pathSeparator}$outputName';
+          final outputName = EncryptionService.removeEncryptedExtension(
+            fileName,
+          );
+          final outputPath =
+              '$outputDirectory${Platform.pathSeparator}$outputName';
           final failedFile = File(outputPath);
           if (await failedFile.exists()) {
             try {
               await failedFile.delete();
-            } catch (deleteError) {
-            }
+            } catch (deleteError) {}
           }
           continue;
         }
@@ -590,10 +594,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   SizedBox(height: 16),
                   Text(
                     'KyrieLock',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -605,9 +606,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const AboutScreen(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const AboutScreen()),
                 );
               },
             ),
