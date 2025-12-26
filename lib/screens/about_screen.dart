@@ -40,7 +40,7 @@ class AboutScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               const Text(
-                '版本号: 1.0.0',
+                'Copyright [2025] [walkingon]',
                 style: TextStyle(fontSize: 18, color: Colors.grey),
               ),
               const SizedBox(height: 32),
