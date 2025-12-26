@@ -338,8 +338,3 @@ flutter build linux --release
 ```bash
 flutter build apk --release
 ```
-
-
-## 许可证
-
-本项目仅供学习和个人使用。
