@@ -453,42 +453,106 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() => _isProcessing = true);
 
     try {
-      final filePath = await FileOperationsService.pickFileForDecryption();
-      if (filePath == null) {
+      final filePaths = await FileOperationsService.pickFilesForDecryption();
+      if (filePaths.isEmpty) {
         setState(() => _isProcessing = false);
         return;
       }
 
-      final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
-      if (!isEncrypted) {
-        _showMessage('该文件不是加密文件', isError: true);
+      for (final filePath in filePaths) {
+        final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
+        if (!isEncrypted) {
+          _showMessage('文件 ${filePath.split(Platform.pathSeparator).last} 不是加密文件，已跳过', isError: true);
+          continue;
+        }
+      }
+
+      final encryptedFiles = [];
+      for (final filePath in filePaths) {
+        final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
+        if (isEncrypted) {
+          encryptedFiles.add(filePath);
+        }
+      }
+
+      if (encryptedFiles.isEmpty) {
+        _showMessage('没有可解密的文件', isError: true);
         setState(() => _isProcessing = false);
         return;
       }
 
-      final hint = await EncryptionService.getPasswordHint(filePath);
+      final firstFilePath = encryptedFiles[0];
+      final hint = await EncryptionService.getPasswordHint(firstFilePath);
       final password = await _showPasswordDialog(hint: hint);
       if (password == null) {
         setState(() => _isProcessing = false);
         return;
       }
 
-      final fileName = filePath.split(Platform.pathSeparator).last;
-      if (mounted) {
-        ProgressDialog.show(
-          context,
-          title: '解密文件',
-          currentProgress: 0,
-          totalProgress: 1,
-          currentFileName: fileName,
-        );
+      final outputDirectory = await FileOperationsService.pickOutputDirectory();
+      if (outputDirectory == null) {
+        _showMessage('未选择保存目录', isError: true);
+        setState(() => _isProcessing = false);
+        return;
       }
 
-      await FileOperationsService.decryptFile(filePath, password);
+      int totalFiles = encryptedFiles.length;
+      int successFiles = 0;
+      int failedFiles = 0;
+
+      for (int i = 0; i < encryptedFiles.length; i++) {
+        final filePath = encryptedFiles[i];
+        final fileName = filePath.split(Platform.pathSeparator).last;
+
+        if (i == 0) {
+          if (mounted) {
+            ProgressDialog.show(
+              context,
+              title: '批量解密文件',
+              currentProgress: i,
+              totalProgress: totalFiles,
+              currentFileName: fileName,
+            );
+          }
+        } else {
+          if (mounted) {
+            ProgressDialog.update(
+              context,
+              title: '批量解密文件',
+              currentProgress: i,
+              totalProgress: totalFiles,
+              currentFileName: fileName,
+            );
+          }
+        }
+
+        try {
+          await FileOperationsService.decryptFile(
+            filePath,
+            outputDirectory,
+            password,
+          );
+          successFiles++;
+        } catch (e) {
+          failedFiles++;
+          
+          final fileName = filePath.split(Platform.pathSeparator).last;
+          final outputName = EncryptionService.removeEncryptedExtension(fileName);
+          final outputPath = '$outputDirectory${Platform.pathSeparator}$outputName';
+          final failedFile = File(outputPath);
+          if (await failedFile.exists()) {
+            try {
+              await failedFile.delete();
+            } catch (deleteError) {
+            }
+          }
+          continue;
+        }
+      }
 
       if (mounted) {
         ProgressDialog.hide(context);
-        _showMessage('文件解密成功');
+        _showMessage('解密完成: 成功 $successFiles 个, 失败 $failedFiles 个');
       }
     } catch (e) {
       if (mounted) {

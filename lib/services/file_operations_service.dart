@@ -3,14 +3,17 @@ import 'package:file_picker/file_picker.dart' as file_picker;
 import '../services/encryption_service.dart';
 
 class FileOperationsService {
-  static Future<String?> pickFileForDecryption() async {
+  static Future<List<String>> pickFilesForDecryption() async {
     file_picker.FilePickerResult? result = await file_picker.FilePicker.platform
-        .pickFiles(type: file_picker.FileType.any, allowMultiple: false);
+        .pickFiles(type: file_picker.FileType.any, allowMultiple: true);
 
     if (result != null && result.files.isNotEmpty) {
-      return result.files.single.path;
+      return result.files
+          .where((file) => file.path != null)
+          .map((file) => file.path!)
+          .toList();
     }
-    return null;
+    return [];
   }
 
   static Future<String?> pickFile() async {
@@ -71,21 +74,16 @@ class FileOperationsService {
     );
   }
 
-  static Future<void> decryptFile(String inputPath, String password) async {
+  static Future<void> decryptFile(
+    String inputPath,
+    String outputDirectory,
+    String password,
+  ) async {
     final file = File(inputPath);
     final fileName = file.path.split(Platform.pathSeparator).last;
 
     final outputName = EncryptionService.removeEncryptedExtension(fileName);
-    
-    final outputDir = await file_picker.FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Select Save Location',
-    );
-    
-    if (outputDir == null) {
-      throw Exception('Save location not selected');
-    }
-    
-    final outputPath = '$outputDir${Platform.pathSeparator}$outputName';
+    final outputPath = '$outputDirectory${Platform.pathSeparator}$outputName';
 
     await EncryptionService.decryptFileToPath(inputPath, outputPath, password);
   }
