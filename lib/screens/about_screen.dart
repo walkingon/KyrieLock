@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
+
+  Future<void> _launchURL() async {
+    final Uri url = Uri.parse('https://github.com/walkingon/KyrieLock');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $url');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,23 +36,16 @@ class AboutScreen extends StatelessWidget {
               const SizedBox(height: 32),
               const Text(
                 'KyrieLock',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               const Text(
                 '版本号: 1.0.0',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 18, color: Colors.grey),
               ),
               const SizedBox(height: 32),
               InkWell(
-                onTap: () {
-                },
+                onTap: _launchURL,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -58,13 +59,10 @@ class AboutScreen extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.code,
-                        color: Colors.blue.shade700,
-                      ),
+                      Icon(Icons.code, color: Colors.blue.shade700),
                       const SizedBox(width: 8),
                       Text(
-                        'GitHub: https://github.com/placeholder/kyrielock',
+                        'https://github.com/walkingon/KyrieLock',
                         style: TextStyle(
                           color: Colors.blue.shade700,
                           fontSize: 16,
