@@ -6,9 +6,10 @@
 
 一款跨平台高性能文件加密GUI客户端。**加密器支持对任意类型的文件进行加密保护**,内置的查看器支持视频、图片、音频、文本和PDF文件的查看。用户可以对文件设置密码加密,选择已加密的文件进行查看时,输入正确密码即可直接查看,也可以将加密文件还原为普通文件。
 
-## 支持的操作系统
+## 已验证支持的操作系统
 
 - Windows
+- Linux
 - Android
 
 ## 核心功能
@@ -16,6 +17,8 @@
 ### 1. 文件关联
 - **Windows**: 应用首次启动时自动注册为.kyl文件的默认打开程序
   - 双击.kyl加密文件即可自动启动应用并打开
+- **Linux**: 使用应用内的"打开文件"功能手动选择.kyl文件
+  - 暂不支持桌面环境文件关联（规划中）
 - **Android**: 由于系统限制(尤其是Android 13+和部分定制ROM如ColorOS),无法直接关联.kyl文件
   - 推荐方式: 在文件管理器中**长按.kyl文件** → 选择**"分享"** → 选择本应用打开
   - 或在应用内使用"打开文件"功能手动选择.kyl文件
@@ -106,6 +109,11 @@
   - 创建ProgID和文件类型关联
   - 支持命令行参数接收文件路径
   - 使用MethodChannel与Dart层通信
+- **Linux平台支持**
+  - 使用Zenity作为GTK文件选择器对话框
+  - 支持中文字体显示（需安装CJK字体包）
+  - 完整的加密/解密功能支持
+  - 桌面环境文件关联功能规划中
 - **Android分享集成**
   - 通过AndroidManifest.xml配置ACTION_SEND intent-filter
   - 支持从文件管理器分享文件到应用
@@ -223,7 +231,12 @@
   - [x] Windows平台注册.kyl文件默认打开程序
   - [x] Android平台分享打开支持(通过ACTION_SEND)
   - [x] 跨平台MethodChannel通信实现
-- [ ] 适配Linux系统
+- [x] 适配Linux系统
+  - [x] 编译Rust加密库Linux版本（.so）
+  - [x] 构建Linux GUI应用
+  - [x] 集成Zenity文件选择器
+  - [x] 验证加密/解密功能
+  - [x] 中文字体支持测试
 - [ ] 适配macOS系统
 - [ ] 适配iOS系统
 
@@ -252,9 +265,11 @@
 - 对应平台的构建工具
   - Windows: Visual Studio 2022或MSVC构建工具
   - macOS: Xcode
-  - Linux: GCC/Clang
+  - Linux: GCC/Clang、GTK 3开发库
 
 ### 构建步骤
+
+#### Windows平台
 
 1. 安装依赖
 ```bash
@@ -266,22 +281,62 @@ flutter pub get
 cd rust_crypto
 cargo build --release
 cd ..
-# 复制编译产物到项目根目录
-cp rust_crypto/target/release/rust_crypto.dll .  # Windows
-# 当rust有修改后，运行脚本build_android_rust.ps1为Android平台构建依赖
+cp rust_crypto/target/release/rust_crypto.dll .
 ```
 
-3. 运行/构建应用
+3. 构建应用
 ```bash
-# 开发模式
-flutter run
+flutter build windows --release
+```
 
-# 发布构建
-flutter build windows --release  # Windows
-flutter build macos --release     # macOS
-flutter build linux --release     # Linux
-flutter build apk --release       # Android
-flutter build ios --release       # iOS
+#### Linux平台
+
+1. 安装系统依赖
+```bash
+# 安装构建工具和GTK开发库
+sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+# 安装中文字体支持
+sudo apt-get install -y fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei
+
+# 安装文件选择器对话框
+sudo apt-get install -y zenity
+```
+
+2. 安装Flutter依赖
+```bash
+flutter pub get
+```
+
+3. 编译Rust加密库
+```bash
+cd rust_crypto
+cargo build --release
+cd ..
+cp rust_crypto/target/release/librust_crypto.so .
+```
+
+4. 构建应用
+```bash
+flutter build linux --release
+```
+
+5. 运行应用
+```bash
+./build/linux/x64/release/bundle/kyrie_lock
+```
+
+**注意事项**：
+- Linux版本需要安装中文字体包（fonts-noto-cjk等），否则中文显示为方框
+- 需要安装zenity作为文件选择器，否则无法打开文件对话框
+- 构建产物位于：`build/linux/x64/release/bundle/`
+
+#### Android平台
+
+当rust有修改后，运行脚本build_android_rust.ps1为Android平台构建依赖
+
+```bash
+flutter build apk --release
 ```
 
 
