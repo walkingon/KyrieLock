@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png" width="120" alt="AppIcon">
+</p>
+
 # KyrieLock
 
 一款跨平台文件加密GUI客户端。**加密器支持对任意类型的文件进行加密保护**,内置的查看器支持视频、图片、音频、文本和PDF文件的查看。用户可以对文件设置密码加密,选择已加密的文件进行查看时,输入正确密码即可直接查看,也可以将加密文件还原为普通文件。
