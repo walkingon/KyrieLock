@@ -589,7 +589,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   Icon(
                     Icons.folder_special,
                     size: 60,
-                    color: Colors.deepPurple,
+                    color: Colors.blueAccent,
                   ),
                   SizedBox(height: 16),
                   Text(
@@ -622,7 +622,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   const Icon(
                     Icons.folder_special,
                     size: 100,
-                    color: Colors.deepPurple,
+                    color: Colors.blueAccent,
                   ),
                   const SizedBox(height: 48),
                   _buildMenuButton(

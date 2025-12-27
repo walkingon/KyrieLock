@@ -109,7 +109,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Audio Player'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.blueAccent,
         foregroundColor: Colors.white,
       ),
       body: Center(
@@ -130,7 +130,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                   const Icon(
                     Icons.music_note,
                     size: 120,
-                    color: Colors.deepPurple,
+                    color: Colors.blueAccent,
                   ),
                   const SizedBox(height: 40),
                   StreamBuilder<Duration>(
@@ -138,7 +138,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                     builder: (context, snapshot) {
                       final position = snapshot.data ?? Duration.zero;
                       final duration = _audioPlayer.duration ?? Duration.zero;
-                      
+
                       return Column(
                         children: [
                           Text(
@@ -149,15 +149,20 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Slider(
-                              value: duration.inMilliseconds > 0 
-                                  ? position.inMilliseconds.toDouble().clamp(0.0, duration.inMilliseconds.toDouble())
+                              value: duration.inMilliseconds > 0
+                                  ? position.inMilliseconds.toDouble().clamp(
+                                      0.0,
+                                      duration.inMilliseconds.toDouble(),
+                                    )
                                   : 0.0,
-                              max: duration.inMilliseconds > 0 
-                                  ? duration.inMilliseconds.toDouble() 
+                              max: duration.inMilliseconds > 0
+                                  ? duration.inMilliseconds.toDouble()
                                   : 1.0,
-                              onChanged: duration.inMilliseconds > 0 
+                              onChanged: duration.inMilliseconds > 0
                                   ? (value) {
-                                      _audioPlayer.seek(Duration(milliseconds: value.toInt()));
+                                      _audioPlayer.seek(
+                                        Duration(milliseconds: value.toInt()),
+                                      );
                                     }
                                   : null,
                             ),
@@ -174,7 +179,9 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                         iconSize: 40,
                         onPressed: () {
                           final position = _audioPlayer.position;
-                          _audioPlayer.seek(position - const Duration(seconds: 10));
+                          _audioPlayer.seek(
+                            position - const Duration(seconds: 10),
+                          );
                         },
                       ),
                       const SizedBox(width: 20),
@@ -183,10 +190,12 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                         builder: (context, snapshot) {
                           final playerState = snapshot.data;
                           final isPlaying = playerState?.playing ?? false;
-                          
+
                           return IconButton(
                             icon: Icon(
-                              isPlaying ? Icons.pause_circle : Icons.play_circle,
+                              isPlaying
+                                  ? Icons.pause_circle
+                                  : Icons.play_circle,
                             ),
                             iconSize: 64,
                             onPressed: () {
@@ -205,7 +214,9 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                         iconSize: 40,
                         onPressed: () {
                           final position = _audioPlayer.position;
-                          _audioPlayer.seek(position + const Duration(seconds: 10));
+                          _audioPlayer.seek(
+                            position + const Duration(seconds: 10),
+                          );
                         },
                       ),
                     ],
