@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.kyrie.kyrie_lock"
+    namespace = "com.walkingon.kyrielock"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.kyrie.kyrie_lock"
+        applicationId = "com.walkingon.kyrielock"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

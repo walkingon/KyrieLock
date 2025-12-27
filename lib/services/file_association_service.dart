@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 class FileAssociationService {
   static const MethodChannel _channel =
-      MethodChannel('com.kyrie.kyrie_lock/file_association');
+      MethodChannel('com.walkingon.kyrielock/file_association');
 
   static Future<void> registerFileAssociation() async {
     if (Platform.isWindows) {

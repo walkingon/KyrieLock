@@ -1,4 +1,4 @@
-package com.kyrie.kyrie_lock
+package com.walkingon.kyrielock
 
 import android.content.Context
 import android.content.Intent
@@ -13,7 +13,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.kyrie.kyrie_lock/file_association"
+    private val CHANNEL = "com.walkingon.kyrielock/file_association"
     private var initialFilePath: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

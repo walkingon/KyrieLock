@@ -25,7 +25,7 @@ void FileAssociationPluginRegisterWithRegistrar(
 
   channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar->messenger(), "com.kyrie.kyrie_lock/file_association",
+          registrar->messenger(), "com.walkingon.kyrielock/file_association",
           &flutter::StandardMethodCodec::GetInstance());
 
   channel_->SetMethodCallHandler(
@@ -38,7 +38,7 @@ void FileAssociationPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar->messenger(), "com.kyrie.kyrie_lock/file_association",
+          registrar->messenger(), "com.walkingon.kyrielock/file_association",
           &flutter::StandardMethodCodec::GetInstance());
 
   channel->SetMethodCallHandler(
