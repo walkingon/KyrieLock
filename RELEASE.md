@@ -6,29 +6,11 @@
 
 ### 如何发布新版本
 
-1. **更新版本号**
-   编辑 `pubspec.yaml` 文件中的版本号：
-   ```yaml
-   version: 1.0.0+1  # 修改为新版本，如 1.1.0+2
-   ```
-
-2. **提交代码**
-   ```bash
-   git add .
-   git commit -m "Release v*.*.*"
-   ```
-
-3. **创建并推送 tag**
-   ```bash
-   git tag v*.*.*
-   git push origin main
-   git push origin v*.*.*
-   ```
-
-4. **自动构建**
-   - GitHub Actions 会自动开始构建
-   - 构建完成后会自动创建 Release
-   - 访问 `https://github.com/walkingon/KyrieLock/releases` 查看
+运行脚本release.ps1并传递版本号参数，例如：
+```
+# 版本号需严格遵守示例格式 v版本号+自增构建号
+.\new_release.ps1 v1.1.0+2
+```
 
 ### 支持的平台
 
