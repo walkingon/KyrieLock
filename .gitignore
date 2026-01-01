@@ -66,3 +66,6 @@ rust_crypto/**/*.lib
 rust_crypto.dll
 librust_crypto.so
 librust_crypto.dylib
+
+# AI 
+.claude

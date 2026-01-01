@@ -5,8 +5,10 @@ import 'services/file_operations_service.dart';
 import 'services/encryption_service.dart';
 import 'services/file_viewer_service.dart';
 import 'services/file_association_service.dart';
+import 'services/localization_service.dart';
 import 'widgets/progress_dialog.dart';
 import 'screens/about_screen.dart';
+import 'screens/language_screen.dart';
 
 // 密码长度限制常量
 const int kPasswordMinLength = 4;
@@ -15,6 +17,9 @@ const int kPasswordMaxLength = 32;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize localization service before running the app
+  await LocalizationService.getInstance();
+
   if (Platform.isWindows) {
     await FileAssociationService.registerFileAssociation();
   }
@@ -22,24 +27,73 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late Future<LocalizationService> _localizationService;
+
+  @override
+  void initState() {
+    super.initState();
+    _localizationService = LocalizationService.getInstance();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'KyrieLock',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const HomePage(),
+    return FutureBuilder<LocalizationService>(
+      future: _localizationService,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return MaterialApp(
+            title: 'KyrieLock',
+            home: const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
+
+        final localizationService = snapshot.data!;
+
+        return MaterialApp(
+          title: localizationService.translate('appTitle'),
+          locale: localizationService.currentLocale,
+          localizationsDelegates: const [
+            // Add delegates if needed for specific widgets
+          ],
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            useMaterial3: true,
+          ),
+          home: HomePage(
+            localizationService: localizationService,
+            onLanguageChanged: _onLanguageChanged,
+          ),
+        );
+      },
     );
+  }
+
+  void _onLanguageChanged() {
+    setState(() {
+      _localizationService = LocalizationService.getInstance();
+    });
   }
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final LocalizationService localizationService;
+  final VoidCallback onLanguageChanged;
+
+  const HomePage({
+    super.key,
+    required this.localizationService,
+    required this.onLanguageChanged,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -47,6 +101,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _isProcessing = false;
+
+  // Helper to get translations
+  String t(String key) => widget.localizationService.translate(key);
 
   @override
   void initState() {
@@ -93,7 +150,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       final fileExists = await File(filePath).exists();
       if (!fileExists) {
-        _showMessage('文件不存在: $filePath', isError: true);
+        _showMessage('${t('fileNotFound')}$filePath', isError: true);
         setState(() => _isProcessing = false);
         return;
       }
@@ -119,7 +176,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         );
       }
     } catch (e) {
-      _showMessage('打开文件失败: $e', isError: true);
+      _showMessage('${t('openFileFailed')}$e', isError: true);
     } finally {
       setState(() => _isProcessing = false);
     }
@@ -143,7 +200,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('设置加密密码'),
+          title: Text(t('setPassword')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -152,9 +209,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 obscureText: true,
                 maxLength: kPasswordMaxLength,
                 decoration: InputDecoration(
-                  labelText: '密码',
-                  hintText: '请输入密码',
-                  counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
+                  labelText: t('password'),
+                  hintText: t('passwordPlaceholder'),
+                  counterText: t('passwordLengthHint'),
                 ),
               ),
               const SizedBox(height: 16),
@@ -163,17 +220,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 obscureText: true,
                 maxLength: kPasswordMaxLength,
                 decoration: InputDecoration(
-                  labelText: '确认密码',
-                  hintText: '请再次输入密码',
-                  counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
+                  labelText: t('confirmPassword'),
+                  hintText: t('confirmPasswordPlaceholder'),
+                  counterText: t('passwordLengthHint'),
                 ),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: hintController,
-                decoration: const InputDecoration(
-                  labelText: '密码提示(可选)',
-                  hintText: '输入密码提示词,帮助回忆',
+                decoration: InputDecoration(
+                  labelText: t('passwordHint'),
+                  hintText: t('passwordHintPlaceholder'),
                 ),
                 maxLength: 32,
               ),
@@ -182,24 +239,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(t('cancel')),
             ),
             TextButton(
               onPressed: () {
                 if (passwordController.text.isEmpty) {
-                  _showMessage('密码不能为空', isError: true);
+                  _showMessage(t('passwordEmpty'), isError: true);
                   return;
                 }
                 final passwordLength = passwordController.text.length;
                 if (passwordLength < kPasswordMinLength ||
                     passwordLength > kPasswordMaxLength) {
-                  _showMessage(
-                      '密码长度必须为$kPasswordMinLength~$kPasswordMaxLength位',
-                      isError: true);
+                  _showMessage(t('passwordLengthInvalid'), isError: true);
                   return;
                 }
                 if (passwordController.text != confirmController.text) {
-                  _showMessage('两次输入的密码不一致', isError: true);
+                  _showMessage(t('passwordMismatch'), isError: true);
                   return;
                 }
                 Navigator.pop(context, {
@@ -209,7 +264,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       : null,
                 });
               },
-              child: const Text('确定'),
+              child: Text(t('confirm')),
             ),
           ],
         );
@@ -228,7 +283,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('输入密码'),
+          title: Text(t('enterPassword')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -250,7 +305,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '提示: $hint',
+                          '${t('hint')}$hint',
                           style: TextStyle(
                             color: Colors.blue.shade700,
                             fontSize: 14,
@@ -267,9 +322,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 obscureText: true,
                 maxLength: kPasswordMaxLength,
                 decoration: InputDecoration(
-                  labelText: '密码',
-                  hintText: '请输入密码',
-                  counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
+                  labelText: t('password'),
+                  hintText: t('passwordPlaceholder'),
+                  counterText: t('passwordLengthHint'),
                 ),
               ),
               if (isConfirm) ...[
@@ -279,9 +334,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   obscureText: true,
                   maxLength: kPasswordMaxLength,
                   decoration: InputDecoration(
-                    labelText: '确认密码',
-                    hintText: '请再次输入密码',
-                    counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
+                    labelText: t('confirmPassword'),
+                    hintText: t('confirmPasswordPlaceholder'),
+                    counterText: t('passwordLengthHint'),
                   ),
                 ),
               ],
@@ -290,30 +345,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(t('cancel')),
             ),
             TextButton(
               onPressed: () {
                 if (passwordController.text.isEmpty) {
-                  _showMessage('密码不能为空', isError: true);
+                  _showMessage(t('passwordEmpty'), isError: true);
                   return;
                 }
                 final passwordLength = passwordController.text.length;
                 if (passwordLength < kPasswordMinLength ||
                     passwordLength > kPasswordMaxLength) {
-                  _showMessage(
-                      '密码长度必须为$kPasswordMinLength~$kPasswordMaxLength位',
-                      isError: true);
+                  _showMessage(t('passwordLengthInvalid'), isError: true);
                   return;
                 }
                 if (isConfirm &&
                     passwordController.text != confirmController.text) {
-                  _showMessage('两次输入的密码不一致', isError: true);
+                  _showMessage(t('passwordMismatch'), isError: true);
                   return;
                 }
                 Navigator.pop(context, passwordController.text);
               },
-              child: const Text('确定'),
+              child: Text(t('confirm')),
             ),
           ],
         );
@@ -354,7 +407,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         );
       }
     } catch (e) {
-      _showMessage('打开文件失败: $e', isError: true);
+      _showMessage('${t('openFileFailed')}$e', isError: true);
     } finally {
       setState(() => _isProcessing = false);
     }
@@ -383,16 +436,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: const Text('选择输出目录'),
-              content: Text('即将加密 ${filePaths.length} 个文件\n请选择加密后文件的保存目录'),
+              title: Text(t('selectOutputDirectory')),
+              content: Text(
+                  '${t('aboutToEncrypt')}${filePaths.length}${t('filesSelectOutputDir')}'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('取消'),
+                  child: Text(t('cancel')),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('确定'),
+                  child: Text(t('confirm')),
                 ),
               ],
             );
@@ -423,7 +477,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mounted) {
             ProgressDialog.show(
               context,
-              title: '批量加密文件',
+              title: t('batchEncrypt'),
               currentProgress: i,
               totalProgress: totalFiles,
               currentFileName: fileName,
@@ -433,7 +487,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mounted) {
             ProgressDialog.update(
               context,
-              title: '批量加密文件',
+              title: t('batchEncrypt'),
               currentProgress: i,
               totalProgress: totalFiles,
               currentFileName: fileName,
@@ -462,12 +516,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
       if (mounted) {
         ProgressDialog.hide(context);
-        _showMessage('加密完成: 成功 $successFiles 个, 跳过 $skippedFiles 个');
+        _showMessage(
+            '${t('encryptCompleted')}$successFiles${t('skipped')}$skippedFiles 个');
       }
     } catch (e) {
       if (mounted) {
         ProgressDialog.hide(context);
-        _showMessage('加密失败: $e', isError: true);
+        _showMessage('${t('encryptFailed')}$e', isError: true);
       }
     } finally {
       setState(() => _isProcessing = false);
@@ -490,7 +545,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
         if (!isEncrypted) {
           _showMessage(
-            '文件 ${filePath.split(Platform.pathSeparator).last} 不是加密文件，已跳过',
+            '${filePath.split(Platform.pathSeparator).last} ${t('notEncryptedFile')}',
             isError: true,
           );
           continue;
@@ -506,7 +561,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
 
       if (encryptedFiles.isEmpty) {
-        _showMessage('没有可解密的文件', isError: true);
+        _showMessage(t('noDecryptableFiles'), isError: true);
         setState(() => _isProcessing = false);
         return;
       }
@@ -521,7 +576,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
       final outputDirectory = await FileOperationsService.pickOutputDirectory();
       if (outputDirectory == null) {
-        _showMessage('未选择保存目录', isError: true);
+        _showMessage(t('noOutputDirectory'), isError: true);
         setState(() => _isProcessing = false);
         return;
       }
@@ -538,7 +593,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mounted) {
             ProgressDialog.show(
               context,
-              title: '批量解密文件',
+              title: t('batchDecrypt'),
               currentProgress: i,
               totalProgress: totalFiles,
               currentFileName: fileName,
@@ -548,7 +603,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mounted) {
             ProgressDialog.update(
               context,
-              title: '批量解密文件',
+              title: t('batchDecrypt'),
               currentProgress: i,
               totalProgress: totalFiles,
               currentFileName: fileName,
@@ -576,7 +631,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (await failedFile.exists()) {
             try {
               await failedFile.delete();
-            } catch (deleteError) {}
+            } catch (deleteError) {
+              // Ignore deletion errors - file may have been already deleted
+            }
           }
           continue;
         }
@@ -584,12 +641,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
       if (mounted) {
         ProgressDialog.hide(context);
-        _showMessage('解密完成: 成功 $successFiles 个, 失败 $failedFiles 个');
+        _showMessage(
+            '${t('decryptCompleted')}$successFiles${t('failed')}$failedFiles 个');
       }
     } catch (e) {
       if (mounted) {
         ProgressDialog.hide(context);
-        _showMessage('解密失败: $e', isError: true);
+        _showMessage('${t('decryptFailed')}$e', isError: true);
       }
     } finally {
       setState(() => _isProcessing = false);
@@ -600,7 +658,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('KyrieLock'),
+        title: Text(t('appTitle')),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       drawer: Drawer(
@@ -611,7 +669,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.inversePrimary,
               ),
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
@@ -619,17 +677,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     size: 60,
                     color: Colors.blueAccent,
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   Text(
-                    'KyrieLock',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    t('appTitle'),
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
             ),
             ListTile(
+              leading: const Icon(Icons.language),
+              title: Text(t('language')),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => LanguageScreen(
+                            onLanguageChanged: widget.onLanguageChanged,
+                          )),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('关于'),
+              title: Text(t('about')),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -655,19 +727,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   const SizedBox(height: 48),
                   _buildMenuButton(
                     icon: Icons.folder_open,
-                    label: '打开文件',
+                    label: t('openFile'),
                     onPressed: _handleOpenFile,
                   ),
                   const SizedBox(height: 16),
                   _buildMenuButton(
                     icon: Icons.lock,
-                    label: '加密文件',
+                    label: t('encryptFile'),
                     onPressed: _handleEncryptFile,
                   ),
                   const SizedBox(height: 16),
                   _buildMenuButton(
                     icon: Icons.lock_open,
-                    label: '解密文件',
+                    label: t('decryptFile'),
                     onPressed: _handleDecryptFile,
                   ),
                 ],
