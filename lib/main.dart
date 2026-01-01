@@ -8,6 +8,10 @@ import 'services/file_association_service.dart';
 import 'widgets/progress_dialog.dart';
 import 'screens/about_screen.dart';
 
+// 密码长度限制常量
+const int kPasswordMinLength = 4;
+const int kPasswordMaxLength = 32;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -146,18 +150,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               TextField(
                 controller: passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(
+                maxLength: kPasswordMaxLength,
+                decoration: InputDecoration(
                   labelText: '密码',
                   hintText: '请输入密码',
+                  counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
                 ),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: confirmController,
                 obscureText: true,
-                decoration: const InputDecoration(
+                maxLength: kPasswordMaxLength,
+                decoration: InputDecoration(
                   labelText: '确认密码',
                   hintText: '请再次输入密码',
+                  counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
                 ),
               ),
               const SizedBox(height: 16),
@@ -180,6 +188,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onPressed: () {
                 if (passwordController.text.isEmpty) {
                   _showMessage('密码不能为空', isError: true);
+                  return;
+                }
+                final passwordLength = passwordController.text.length;
+                if (passwordLength < kPasswordMinLength ||
+                    passwordLength > kPasswordMaxLength) {
+                  _showMessage(
+                      '密码长度必须为$kPasswordMinLength~$kPasswordMaxLength位',
+                      isError: true);
                   return;
                 }
                 if (passwordController.text != confirmController.text) {
@@ -249,9 +265,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               TextField(
                 controller: passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(
+                maxLength: kPasswordMaxLength,
+                decoration: InputDecoration(
                   labelText: '密码',
                   hintText: '请输入密码',
+                  counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
                 ),
               ),
               if (isConfirm) ...[
@@ -259,9 +277,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 TextField(
                   controller: confirmController,
                   obscureText: true,
-                  decoration: const InputDecoration(
+                  maxLength: kPasswordMaxLength,
+                  decoration: InputDecoration(
                     labelText: '确认密码',
                     hintText: '请再次输入密码',
+                    counterText: '$kPasswordMinLength~$kPasswordMaxLength位',
                   ),
                 ),
               ],
@@ -276,6 +296,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onPressed: () {
                 if (passwordController.text.isEmpty) {
                   _showMessage('密码不能为空', isError: true);
+                  return;
+                }
+                final passwordLength = passwordController.text.length;
+                if (passwordLength < kPasswordMinLength ||
+                    passwordLength > kPasswordMaxLength) {
+                  _showMessage(
+                      '密码长度必须为$kPasswordMinLength~$kPasswordMaxLength位',
+                      isError: true);
                   return;
                 }
                 if (isConfirm &&
