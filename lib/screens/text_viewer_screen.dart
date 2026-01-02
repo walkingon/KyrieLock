@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/encryption_service.dart';
@@ -40,10 +41,10 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
         );
         
         if (decryptResult.data != null) {
-          textContent = String.fromCharCodes(decryptResult.data!);
+          textContent = utf8.decode(decryptResult.data!);
         } else if (decryptResult.tempFilePath != null) {
           final tempFile = File(decryptResult.tempFilePath!);
-          textContent = await tempFile.readAsString();
+          textContent = await tempFile.readAsString(encoding: utf8);
           await tempFile.delete();
         } else {
           throw Exception('Invalid decrypt result');
