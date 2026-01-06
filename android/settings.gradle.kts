@@ -14,6 +14,16 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
+        // 添加 Kotlin 仓库以解决插件依赖问题
+        maven { url = uri("https://cache-redirector.jetbrains.com/kotlin") }
+        maven { url = uri("https://www.jetbrains.com/intellij-repository/releases") }
+    }
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "org.jetbrains.kotlin.android") {
+                useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+            }
+        }
     }
 }
 
