@@ -64,6 +64,9 @@ dependencies:
   # URL launcher
   url_launcher: ^6.3.1
 
+  # Package info
+  package_info_plus: ^6.0.0
+
   # Local storage for language preference
   shared_preferences: ^2.2.3
 
