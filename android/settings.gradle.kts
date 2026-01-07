@@ -14,9 +14,9 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        // 添加 Kotlin 仓库以解决插件依赖问题
+        // 添加 Kotlin 仓库镜像以解决 Maven Central 403 问题
         maven { url = uri("https://cache-redirector.jetbrains.com/kotlin") }
-        maven { url = uri("https://www.jetbrains.com/intellij-repository/releases") }
+        maven { url = uri("https://cache-redirector.jetbrains.com/www.jetbrains.com/intellij-repository/releases") }
     }
     resolutionStrategy {
         eachPlugin {

@@ -2,6 +2,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // 添加 Kotlin 仓库镜像以解决 Maven Central 403 问题
+        maven { url = uri("https://cache-redirector.jetbrains.com/kotlin") }
     }
 }
 
