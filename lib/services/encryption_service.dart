@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -128,8 +127,7 @@ class EncryptionService {
     }
 
     final fileSize = await file.length();
-    final encryptedSize = fileSize - headerSize - 1;
-    
+
     if (kDebugMode) {
       debugPrint('[DECRYPT] Starting decryption: fileSize=$fileSize');
     }
@@ -137,7 +135,7 @@ class EncryptionService {
     final passwordBytes = utf8.encode(password);
     
     try {
-      final isLargeFile = encryptedSize > chunkSize;
+      final isLargeFile = (fileSize - headerSize - 1) > chunkSize;
       
       if (isLargeFile) {
         final tempDir = await getTemporaryDirectory();

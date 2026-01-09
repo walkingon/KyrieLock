@@ -39,14 +39,6 @@ class FileOperationsService {
     return [];
   }
 
-  static Future<String?> pickSaveLocation(String suggestedName) async {
-    String? outputPath = await file_picker.FilePicker.platform.saveFile(
-      dialogTitle: 'Save File',
-      fileName: suggestedName,
-    );
-    return outputPath;
-  }
-
   static Future<String?> pickOutputDirectory() async {
     String? outputPath = await file_picker.FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Select Output Directory',

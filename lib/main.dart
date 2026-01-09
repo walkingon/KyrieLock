@@ -121,9 +121,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {}
-
   Future<void> _cleanupFilePickerCache() async {
     try {
       await FilePicker.platform.clearTemporaryFiles();
@@ -192,9 +189,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<Map<String, String?>?> _showEncryptPasswordDialog() async {
-    final TextEditingController passwordController = TextEditingController();
-    final TextEditingController confirmController = TextEditingController();
-    final TextEditingController hintController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    final hintController = TextEditingController();
 
     return showDialog<Map<String, String?>>(
       context: context,
@@ -272,12 +269,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Future<String?> _showPasswordDialog({
-    bool isConfirm = false,
-    String? hint,
-  }) async {
-    final TextEditingController passwordController = TextEditingController();
-    final TextEditingController confirmController = TextEditingController();
+  Future<String?> _showPasswordDialog({String? hint}) async {
+    final passwordController = TextEditingController();
 
     return showDialog<String>(
       context: context,
@@ -327,19 +320,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   counterText: t('passwordLengthHint'),
                 ),
               ),
-              if (isConfirm) ...[
-                const SizedBox(height: 16),
-                TextField(
-                  controller: confirmController,
-                  obscureText: true,
-                  maxLength: kPasswordMaxLength,
-                  decoration: InputDecoration(
-                    labelText: t('confirmPassword'),
-                    hintText: t('confirmPasswordPlaceholder'),
-                    counterText: t('passwordLengthHint'),
-                  ),
-                ),
-              ],
             ],
           ),
           actions: [
@@ -357,11 +337,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 if (passwordLength < kPasswordMinLength ||
                     passwordLength > kPasswordMaxLength) {
                   _showMessage(t('passwordLengthInvalid'), isError: true);
-                  return;
-                }
-                if (isConfirm &&
-                    passwordController.text != confirmController.text) {
-                  _showMessage(t('passwordMismatch'), isError: true);
                   return;
                 }
                 Navigator.pop(context, passwordController.text);
@@ -541,22 +516,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return;
       }
 
-      for (final filePath in filePaths) {
-        final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
-        if (!isEncrypted) {
-          _showMessage(
-            '${filePath.split(Platform.pathSeparator).last} ${t('notEncryptedFile')}',
-            isError: true,
-          );
-          continue;
-        }
-      }
-
-      final encryptedFiles = [];
+      final encryptedFiles = <String>[];
       for (final filePath in filePaths) {
         final isEncrypted = await EncryptionService.isEncryptedFile(filePath);
         if (isEncrypted) {
           encryptedFiles.add(filePath);
+        } else {
+          _showMessage(
+            '${filePath.split(Platform.pathSeparator).last} ${t('notEncryptedFile')}',
+            isError: true,
+          );
         }
       }
 

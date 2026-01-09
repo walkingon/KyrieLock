@@ -24,11 +24,7 @@ class FileAssociationService {
 
   static Future<String?> getInitialFile() async {
     try {
-      if (Platform.isWindows) {
-        return await _channel.invokeMethod('getInitialFile');
-      } else if (Platform.isAndroid) {
-        return await _channel.invokeMethod('getInitialFile');
-      }
+      return await _channel.invokeMethod('getInitialFile');
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to get initial file: $e');

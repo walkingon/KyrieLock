@@ -49,15 +49,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         if (decryptResult.isLargeFile && decryptResult.tempFilePath != null) {
           videoPath = decryptResult.tempFilePath!;
           _tempVideoFile = File(videoPath);
-        } else if (decryptResult.data != null) {
+        } else {
           final tempDir = await getTemporaryDirectory();
           _tempVideoFile = File(
             '${tempDir.path}/temp_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
           );
           await _tempVideoFile!.writeAsBytes(decryptResult.data!);
           videoPath = _tempVideoFile!.path;
-        } else {
-          throw Exception('Invalid decrypt result');
         }
       } else {
         videoPath = widget.videoPath;

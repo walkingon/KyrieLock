@@ -272,29 +272,4 @@ class AppLocalizations {
         : 'en';
     return _translations[langCode]?[key] ?? _translations['en']?[key] ?? key;
   }
-
-  // Convenience getters for common strings
-  String get appTitle => translate('appTitle');
-  String get openFile => translate('openFile');
-  String get encryptFile => translate('encryptFile');
-  String get decryptFile => translate('decryptFile');
-  String get setPassword => translate('setPassword');
-  String get password => translate('password');
-  String get confirmPassword => translate('confirmPassword');
-  String get passwordHint => translate('passwordHint');
-  String get passwordPlaceholder => translate('passwordPlaceholder');
-  String get confirmPasswordPlaceholder => translate('confirmPasswordPlaceholder');
-  String get passwordLengthHint => translate('passwordLengthHint');
-  String get enterPassword => translate('enterPassword');
-  String get cancel => translate('cancel');
-  String get confirm => translate('confirm');
-  String get passwordEmpty => translate('passwordEmpty');
-  String get passwordLengthInvalid => translate('passwordLengthInvalid');
-  String get passwordMismatch => translate('passwordMismatch');
-  String get about => translate('about');
-  String get language => translate('language');
-  String get languageSettings => translate('languageSettings');
-  String get selectLanguage => translate('selectLanguage');
-  String get chinese => translate('chinese');
-  String get english => translate('english');
 }
