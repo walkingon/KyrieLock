@@ -8,7 +8,10 @@
 
  ## 应用截图 
 
-<div style="display:flex;gap:10px;"><img src="./RES/capture_150425613.jpg" width="589" alt="桌面端截图"><img src="./RES/Screenshot_7d42df.jpg" width="200" alt="移动端截图"></div> 
+<div align="center">
+<img src="RES/screenshoot_android.png" alt="Android截图" width="30%" />
+<img src="RES/screenshoot_windows.png" alt="Windows截图" width="60%" />
+</div>
 
 ### [前往下载](https://github.com/walkingon/KyrieLock/releases)
 
