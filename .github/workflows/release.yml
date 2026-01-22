@@ -139,14 +139,18 @@ jobs:
       - name: Build Rust library
         run: |
           cd rust_crypto
-          cargo build --release
+          rustup target add aarch64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
           cd ..
-          cp rust_crypto/target/release/librust_crypto.dylib .
-      
+
       - name: Build macOS
         run: |
           flutter pub get
           flutter build macos --release
+
+      - name: Copy Rust library
+        run: |
+          cp rust_crypto/target/aarch64-apple-darwin/release/librust_crypto.dylib build/macos/Build/Products/Release/kyrie_lock.app/Contents/Resources/
       
       - name: Create macOS DMG
         run: |

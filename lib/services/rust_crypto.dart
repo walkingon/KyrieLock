@@ -18,7 +18,10 @@ class RustCrypto {
     } else if (Platform.isLinux) {
       _lib = ffi.DynamicLibrary.open('rust_crypto/target/release/librust_crypto.so');
     } else if (Platform.isMacOS) {
-      _lib = ffi.DynamicLibrary.open('rust_crypto/target/release/librust_crypto.dylib');
+      final exePath = Platform.resolvedExecutable;
+      final exeDir = path.dirname(exePath);
+      final dylibPath = path.join(exeDir, '..', 'Resources', 'librust_crypto.dylib');
+      _lib = ffi.DynamicLibrary.open(dylibPath);
     } else if (Platform.isAndroid) {
       _lib = ffi.DynamicLibrary.open('librust_crypto.so');
     } else if (Platform.isIOS) {

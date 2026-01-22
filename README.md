@@ -6,20 +6,16 @@
 
 一款开源跨平台高性能文件加密GUI客户端。**加密器支持对任意类型的文件进行加密保护**,内置的查看器支持视频、图片、音频、文本和PDF文件的查看。用户可以对文件设置密码加密,选择已加密的文件进行查看时,输入正确密码即可直接查看,也可以将加密文件还原为普通文件。
 
- ## 应用截图 
+###  [前往下载](https://github.com/walkingon/KyrieLock/releases) 
+
+已支持：Windows、macOS(arm64)、Linux、Android
+
+## 应用截图 
 
 <div align="center">
 <img src="RES/screenshoot_android.png" alt="Android截图" width="30%" />
 <img src="RES/screenshoot_windows.png" alt="Windows截图" width="60%" />
 </div>
-
-### [前往下载](https://github.com/walkingon/KyrieLock/releases)
-
-## 已支持的操作系统
-
-- Windows
-- Linux
-- Android
 
 ## 核心功能
 
@@ -361,4 +357,42 @@ flutter build linux --release
 
 ```bash
 flutter build apk --release
+```
+
+#### macOS
+
+1. 安装系统依赖
+```bash
+# 安装CocoaPods
+brew install cocoapods
+pod setup
+```
+
+2. 安装rust
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+3. 编译Rust加密库
+```bash
+cd rust_crypto
+
+# 添加macOS编译目标
+rustup target add aarch64-apple-darwin  # Apple Silicon
+
+# 编译Release版本
+cargo build --release --target aarch64-apple-darwin # Apple Silicon Mac
+
+cd ..
+```
+
+4. Build macOS
+```bash
+flutter pub get
+flutter build macos --release
+```
+
+5. Copy Rust library
+```bash
+cp rust_crypto/target/aarch64-apple-darwin/release/librust_crypto.dylib build/macos/Build/Products/Release/kyrie_lock.app/Contents/Resources/
 ```
